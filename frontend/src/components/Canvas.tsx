@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Ellipse, Layer, Line, Rect, Stage } from 'react-konva';
 import type Konva from 'konva';
-import { shapesMap } from '../lib/doc';
+import { awareness, shapesMap } from '../lib/doc';
 import { useShapes } from '../hooks/useShapes';
+import { useAwareness } from '../hooks/useAwareness';
+import { usePresence } from '../hooks/usePresence';
 import { createEllipse, createRect, createStroke, createText } from '../lib/shapes';
 import ShapeRenderer from './ShapeRenderer';
+import CursorLayer from './CursorLayer';
+import PeerList from './PeerList';
 import Toolbar, { type Tool } from './Toolbar';
 
 type Point = { x: number; y: number };
@@ -14,15 +18,24 @@ type Draft =
   | { kind: 'pen'; points: number[] };
 
 const MIN_DRAG = 3;
+const CURSOR_THROTTLE_MS = 50;
 
 export default function Canvas() {
   const shapes = useShapes();
+  const remotePeers = useAwareness();
+  const presencePeers = usePresence();
   const stageRef = useRef<Konva.Stage>(null);
   const dragStart = useRef<Point | null>(null);
+  const lastCursorSentAt = useRef(0);
 
   const [tool, setTool] = useState<Tool>('select');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
+
+  const presentClientIDs = useMemo(
+    () => new Set(presencePeers.map((peer) => peer.awarenessClientID)),
+    [presencePeers],
+  );
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -38,6 +51,13 @@ export default function Canvas() {
 
   function pointerPos(): Point | null {
     return stageRef.current?.getPointerPosition() ?? null;
+  }
+
+  function updateCursorAwareness(pos: Point | null) {
+    const now = Date.now();
+    if (now - lastCursorSentAt.current < CURSOR_THROTTLE_MS) return;
+    lastCursorSentAt.current = now;
+    awareness.setLocalStateField('cursor', pos);
   }
 
   function handleMouseDown(e: Konva.KonvaEventObject<MouseEvent>) {
@@ -57,9 +77,10 @@ export default function Canvas() {
   }
 
   function handleMouseMove() {
-    if (!draft) return;
     const pos = pointerPos();
-    if (!pos) return;
+    updateCursorAwareness(pos);
+
+    if (!draft || !pos) return;
     if (draft.kind === 'pen') {
       setDraft({ kind: 'pen', points: [...draft.points, pos.x, pos.y] });
       return;
@@ -73,6 +94,10 @@ export default function Canvas() {
       width: Math.abs(pos.x - start.x),
       height: Math.abs(pos.y - start.y),
     });
+  }
+
+  function handleMouseLeave() {
+    awareness.setLocalStateField('cursor', null);
   }
 
   function handleMouseUp() {
@@ -115,6 +140,7 @@ export default function Canvas() {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-neutral-100">
       <Toolbar tool={tool} onChange={setTool} />
+      <PeerList peers={presencePeers} localAwarenessClientID={awareness.clientID} />
       <Stage
         ref={stageRef}
         width={window.innerWidth}
@@ -122,6 +148,7 @@ export default function Canvas() {
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
         onDblClick={handleDblClick}
       >
         <Layer>
@@ -169,6 +196,9 @@ export default function Canvas() {
               listening={false}
             />
           )}
+        </Layer>
+        <Layer listening={false}>
+          <CursorLayer peers={remotePeers} presentClientIDs={presentClientIDs} />
         </Layer>
       </Stage>
     </div>

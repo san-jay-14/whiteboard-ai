@@ -1,10 +1,12 @@
-export type Tool = 'select' | 'rect' | 'ellipse' | 'pen';
+export type Tool = 'select' | 'rect' | 'ellipse' | 'pen' | 'arrow' | 'sticky';
 
 const TOOLS: { id: Tool; label: string }[] = [
   { id: 'select', label: 'Select' },
   { id: 'rect', label: 'Rectangle' },
   { id: 'ellipse', label: 'Ellipse' },
   { id: 'pen', label: 'Pen' },
+  { id: 'arrow', label: 'Connector' },
+  { id: 'sticky', label: 'Sticky' },
 ];
 
 type Props = {
@@ -28,7 +30,7 @@ export default function Toolbar({ tool, onChange }: Props) {
         </button>
       ))}
       <span className="ml-2 self-center pr-2 text-xs text-neutral-400">
-        Double-click empty canvas for text · Delete/Backspace to remove selection
+        Double-click canvas for text, sticky for edit · Shift-click or drag to multi-select · Delete/Backspace to remove
       </span>
     </div>
   );

@@ -1,11 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { Transformer } from 'react-konva';
 import type Konva from 'konva';
-import { shapesMap, ydoc } from '../lib/doc';
+import type * as Y from 'yjs';
+import type { Shape } from '../lib/types';
 
 const MIN_SIZE = 10;
 
 type Props = {
+  doc: Y.Doc;
+  shapesMap: Y.Map<Shape>;
   shapeIds: string[];
   nodeRefs: React.RefObject<Map<string, Konva.Node>>;
   active: boolean;
@@ -14,7 +17,7 @@ type Props = {
 // Wraps Konva's built-in Transformer for resize/rotate handles on selected
 // rect/ellipse/sticky shapes (brief step 6 point 4) — Konva already draws
 // exactly the corner-handles + above-center rotate-handle UI this needs.
-export default function SelectionTransformer({ shapeIds, nodeRefs, active }: Props) {
+export default function SelectionTransformer({ doc, shapesMap, shapeIds, nodeRefs, active }: Props) {
   const trRef = useRef<Konva.Transformer>(null);
 
   // No dependency array: a shape created and selected in the same render
@@ -38,7 +41,7 @@ export default function SelectionTransformer({ shapeIds, nodeRefs, active }: Pro
     if (!tr) return;
     const transformedNodes = tr.nodes();
 
-    ydoc.transact(() => {
+    doc.transact(() => {
       for (const node of transformedNodes) {
         const id = node.id();
         const shape = shapesMap.get(id);

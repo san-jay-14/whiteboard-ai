@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Arrow, Circle, Ellipse, Layer, Line, Rect, Stage } from 'react-konva';
 import type Konva from 'konva';
-import { awareness, shapesMap, ydoc } from '../lib/doc';
+import { useBoardSession } from '../lib/BoardSessionContext';
 import { useShapes } from '../hooks/useShapes';
 import { useAwareness } from '../hooks/useAwareness';
 import { usePresence } from '../hooks/usePresence';
@@ -35,6 +35,7 @@ const CURSOR_THROTTLE_MS = 50;
 const TRANSFORMABLE_TYPES = new Set<Shape['type']>(['rect', 'ellipse', 'sticky']);
 
 export default function Canvas() {
+  const { doc, shapesMap, awareness } = useBoardSession();
   const shapes = useShapes();
   const remotePeers = useAwareness();
   const presencePeers = usePresence();
@@ -73,13 +74,13 @@ export default function Canvas() {
       if (editingStickyId) return; // typing in the inline editor, not a canvas shortcut
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size > 0) {
         e.preventDefault();
-        deleteShapesCascading(Array.from(selectedIds));
+        deleteShapesCascading(doc, shapesMap, Array.from(selectedIds));
         setSelectedIds(new Set());
       }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedIds, editingStickyId]);
+  }, [selectedIds, editingStickyId, doc, shapesMap]);
 
   function pointerPos(): Point | null {
     return stageRef.current?.getPointerPosition() ?? null;
@@ -311,7 +312,7 @@ export default function Canvas() {
       const dx = newX - shape.x;
       const dy = newY - shape.y;
       const primaryIsTransformable = TRANSFORMABLE_TYPES.has(shape.type);
-      ydoc.transact(() => {
+      doc.transact(() => {
         selectedIds.forEach((id) => {
           if (id === shape.id) return;
           const sibling = shapesMap.get(id);
@@ -373,6 +374,7 @@ export default function Canvas() {
             <ShapeRenderer
               key={shape.id}
               shape={shape}
+              shapesMap={shapesMap}
               selected={selectedIds.has(shape.id)}
               draggable={tool === 'select' && shape.type !== 'arrow'}
               onSelect={(e) => handleSelectShape(shape.id, e)}
@@ -384,6 +386,8 @@ export default function Canvas() {
           ))}
 
           <SelectionTransformer
+            doc={doc}
+            shapesMap={shapesMap}
             shapeIds={transformableSelectedIds}
             nodeRefs={shapeNodeRefs}
             active={tool === 'select'}

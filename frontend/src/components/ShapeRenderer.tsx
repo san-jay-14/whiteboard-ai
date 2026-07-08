@@ -1,6 +1,6 @@
 import { Arrow, Ellipse, Group, Line, Rect, Text } from 'react-konva';
 import type Konva from 'konva';
-import { shapesMap } from '../lib/doc';
+import type * as Y from 'yjs';
 import { getArrowEndpoints } from '../lib/geometry';
 import type { Shape } from '../lib/types';
 
@@ -8,6 +8,7 @@ const SELECTED_STROKE = '#111827';
 
 type Props = {
   shape: Shape;
+  shapesMap: Y.Map<Shape>;
   selected: boolean;
   draggable: boolean;
   onSelect: (e: Konva.KonvaEventObject<MouseEvent>) => void;
@@ -26,6 +27,7 @@ type Props = {
 // positions of fromShapeId/toShapeId on every render (step 6).
 export default function ShapeRenderer({
   shape,
+  shapesMap,
   selected,
   draggable,
   onSelect,

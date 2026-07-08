@@ -1,26 +1,27 @@
-import { useSyncExternalStore } from 'react';
-import { shapesMap } from '../lib/doc';
+import { useCallback, useRef, useSyncExternalStore } from 'react';
+import { useBoardSession } from '../lib/BoardSessionContext';
 import type { Shape } from '../lib/types';
 
-// Yjs is the single source of truth for shape state — this hook subscribes
-// to shapesMap's own observer instead of mirroring shapes into useState, so
-// there's never a second copy of shape data to fall out of sync (this
-// matters once step 4 adds remote peers writing into the same map).
-let cachedShapes: Shape[] = Array.from(shapesMap.values());
-
-function subscribe(callback: () => void) {
-  const onChange = () => {
-    cachedShapes = Array.from(shapesMap.values());
-    callback();
-  };
-  shapesMap.observe(onChange);
-  return () => shapesMap.unobserve(onChange);
-}
-
-function getSnapshot() {
-  return cachedShapes;
-}
-
+// Yjs is the single source of truth for shape state — this subscribes to the
+// active board's shapesMap observer instead of mirroring shapes into
+// useState, so there's never a second copy to fall out of sync.
 export function useShapes(): Shape[] {
+  const { shapesMap } = useBoardSession();
+  const cacheRef = useRef<Shape[]>(Array.from(shapesMap.values()));
+
+  const subscribe = useCallback(
+    (callback: () => void) => {
+      const onChange = () => {
+        cacheRef.current = Array.from(shapesMap.values());
+        callback();
+      };
+      shapesMap.observe(onChange);
+      return () => shapesMap.unobserve(onChange);
+    },
+    [shapesMap],
+  );
+
+  const getSnapshot = useCallback(() => cacheRef.current, []);
+
   return useSyncExternalStore(subscribe, getSnapshot);
 }

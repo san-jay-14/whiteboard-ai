@@ -9,7 +9,14 @@ Claude Desktop (build-order step 8, `PROJECT_BRIEF.md` section 6).
 - `get_board(board_id)` → the raw `board_snapshots.shape_graph` JSON (object keyed by shape id).
 - `get_board_snapshot_image(board_id)` → a PNG of the board, rendered server-side from the
   same shape model the frontend draws (`src/render/svg.ts` mirrors the Konva layer), returned
-  as an MCP image content block.
+  as an MCP image content block. It **also saves the PNG to disk and opens it** in your OS
+  default image viewer — Claude Desktop doesn't render MCP image blocks inline in the chat, so
+  this is how a human actually sees the snapshot. The image block is still returned so the
+  model can visually reason about the board.
+
+  - Saved to `SNAPSHOT_DIR` (env) or `<os-temp>/whiteboard-snapshots/board-<id>.png`
+    (one file per board, overwritten each call).
+  - Set `SNAPSHOT_AUTO_OPEN=false` (env) to save without popping the viewer.
 
 It reads Supabase directly with a **service-role key** (bypasses RLS — fine for a local
 single-user server). No OAuth, no user auth.

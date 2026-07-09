@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { listBoards, getShapeGraph } from './supabase.js';
 import { shapeGraphToSvg } from './render/svg.js';
 import { svgToPngBase64 } from './render/png.js';
+import { savePng } from './render/save.js';
 
 // Local, single-user, stdio MCP server exposing the whiteboard to Claude
 // Desktop (brief section 6). stdout is the protocol channel — never write to
@@ -60,7 +61,21 @@ server.registerTool(
     }
     const svg = shapeGraphToSvg(graph);
     const data = svgToPngBase64(svg);
-    return { content: [{ type: 'image', data, mimeType: 'image/png' }] };
+    // Save + open locally so a human using Claude Desktop can actually see
+    // it (Claude Desktop doesn't render MCP image blocks inline); the image
+    // block is still returned so the model can visually reason about it.
+    const saved = savePng(data, board_id);
+    return {
+      content: [
+        { type: 'image', data, mimeType: 'image/png' },
+        {
+          type: 'text',
+          text: saved.opened
+            ? `Snapshot saved to ${saved.path} and opened in your default image viewer.`
+            : `Snapshot saved to ${saved.path}.`,
+        },
+      ],
+    };
   },
 );
 

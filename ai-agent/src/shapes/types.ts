@@ -1,14 +1,9 @@
-// Shape data model — exact copy of PROJECT_BRIEF.md section 3.
+// Local copy of the frontend shape model (frontend/src/lib/types.ts),
+// mirroring the same standalone-copy precedent already used by
+// mcp-server/src/shapes/types.ts. Kept independent so the agent builds
+// without importing the frontend package; if the frontend model changes,
+// mirror it here.
 
-// rotation is an addition beyond the literal brief section 3 type — resize/
-// rotate handles (step 6) have nowhere else to persist rotation. Optional
-// and degrees-based (matches Konva's node.rotation()); absent/0 means
-// unrotated, so every shape created before this field existed is unaffected.
-//
-// groupId and reviewReason are step 10 additions (AI reasoning loop, brief
-// section 5). groupId marks shapes an AI propose_group call decided belong
-// together; reviewReason carries the tool call's `reason` so the frontend
-// can show it as a tooltip on pendingReview shapes (step 11).
 export type ShapeBase = {
   id: string;
   type: 'rect' | 'ellipse' | 'arrow' | 'text' | 'stroke' | 'sticky';
@@ -28,9 +23,9 @@ export type EllipseShape = ShapeBase & { type: 'ellipse'; radiusX: number; radiu
 export type ArrowShape = ShapeBase & { type: 'arrow'; fromShapeId: string; toShapeId: string; points: number[] };
 export type TextShape = ShapeBase & { type: 'text'; text: string; fontSize: number };
 export type StrokeShape = ShapeBase & { type: 'stroke'; points: number[]; strokeWidth: number; color: string };
-// width/height are also an addition beyond section 3 — sticky resize (step
-// 6) needs persisted dimensions instead of the old fixed STICKY_SIZE
-// constant. Always set by createSticky; no optional/fallback branches needed.
 export type StickyShape = ShapeBase & { type: 'sticky'; text: string; color: string; width: number; height: number };
 
 export type Shape = RectShape | EllipseShape | ArrowShape | TextShape | StrokeShape | StickyShape;
+
+// Plain-JSON view of the Y.Map<Shape> the reasoning pass sends to Claude.
+export type ShapeGraph = Record<string, Shape>;

@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AGENT_BOARD_ID } from './env';
 import {
   AWARENESS_EVENT,
+  MANUAL_REVIEW_EVENT,
   REMOTE_ORIGIN,
   UPDATE_EVENT,
   createChunkReassembler,
@@ -12,6 +13,13 @@ import {
 } from '../../shared/transport';
 import { AGENT_BROADCAST_ID, AGENT_COLOR, AGENT_NAME, type AwarenessState } from '../../shared/presence';
 import { byteaHexToBytes } from '../../shared/bytea';
+import type { Shape, ShapeGraph } from './shapes/types';
+import { runReasoningPass } from './reasoning';
+import { executeToolCalls } from './executor';
+
+// Debounce trigger (brief section 5): fire a reasoning pass ~4-6s after the
+// last human/peer doc update on the watched board.
+const DEBOUNCE_MS = 5000;
 
 // The agent has no mouse; it parks a fixed cursor so it renders in the
 // awareness layer as a visible, distinct "watching" presence (step 9).
@@ -25,10 +33,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 
 async function main() {
   const doc = new Y.Doc();
+  const shapesMap: Y.Map<Shape> = doc.getMap('shapes');
 
   // Load-on-join, same as a normal client (brief step 7): apply the latest
-  // snapshot before wiring listeners. The agent never broadcasts doc
-  // updates this session, so this can't echo out.
+  // snapshot before wiring listeners.
   const { data, error } = await supabase
     .from('board_snapshots')
     .select('yjs_state')
@@ -50,8 +58,10 @@ async function main() {
   });
 
   const awarenessSender = createGuardedSender(channel, AWARENESS_EVENT, AGENT_BROADCAST_ID);
+  // Step 10: the executor now writes pendingReview shapes into shapesMap,
+  // so (unlike step 9) the agent needs to broadcast its own doc updates too.
+  const updateSender = createGuardedSender(channel, UPDATE_EVENT, AGENT_BROADCAST_ID);
 
-  // Keep the local doc in sync with peers, but never write back this session.
   const updateReassembler = createChunkReassembler((bytes) => {
     Y.applyUpdate(doc, bytes, REMOTE_ORIGIN);
   });
@@ -67,6 +77,58 @@ async function main() {
     if (payload.origin === AGENT_BROADCAST_ID) return;
     awarenessReassembler.receive(payload);
   });
+
+  // --- Reasoning pass triggers (brief section 5) ---------------------------
+
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let isReasoning = false;
+
+  async function runPass(trigger: 'debounce' | 'manual') {
+    if (isReasoning) {
+      console.log(`[reasoning] ignoring ${trigger} trigger — a pass is already in flight`);
+      return;
+    }
+    isReasoning = true;
+    try {
+      const shapeGraph = shapesMap.toJSON() as ShapeGraph;
+      console.log(`[reasoning] running pass (${trigger}), ${Object.keys(shapeGraph).length} shape(s)`);
+      const calls = await runReasoningPass(shapeGraph);
+      if (calls.length === 0) {
+        console.log('[reasoning] no suggestions this pass');
+      } else {
+        console.log(`[reasoning] applying ${calls.length} proposal(s): ${calls.map((c) => c.name).join(', ')}`);
+        executeToolCalls(doc, shapesMap, calls);
+      }
+    } catch (e) {
+      console.error('[reasoning] pass failed', e);
+    } finally {
+      isReasoning = false;
+    }
+  }
+
+  function scheduleDebounce() {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      void runPass('debounce');
+    }, DEBOUNCE_MS);
+  }
+
+  channel.on('broadcast', { event: MANUAL_REVIEW_EVENT }, () => {
+    void runPass('manual');
+  });
+
+  // Broadcast the agent's own doc writes; reset the idle timer on genuine
+  // peer edits only (never on the agent's own writes — that would make it
+  // perpetually re-trigger itself).
+  function handleLocalDocUpdate(update: Uint8Array, origin: unknown) {
+    if (origin === REMOTE_ORIGIN) {
+      scheduleDebounce();
+      return;
+    }
+    updateSender.send(update);
+  }
+  doc.on('update', handleLocalDocUpdate);
 
   // Broadcast the agent's own awareness changes (its identity/cursor).
   awareness.on('update', (
@@ -92,6 +154,7 @@ async function main() {
     console.log(`channel status: ${status}`);
     if (status === 'SUBSCRIBED') {
       awarenessSender.onSubscribed();
+      updateSender.onSubscribed();
       channel
         .track({
           name: AGENT_NAME,
@@ -103,11 +166,13 @@ async function main() {
         .catch((e) => console.error('presence track failed', e));
     } else {
       awarenessSender.onDisconnected();
+      updateSender.onDisconnected();
     }
   });
 
   const shutdown = async () => {
     console.log('shutting down…');
+    if (debounceTimer) clearTimeout(debounceTimer);
     removeAwarenessStates(awareness, [awareness.clientID], 'shutdown');
     try {
       await channel.untrack();

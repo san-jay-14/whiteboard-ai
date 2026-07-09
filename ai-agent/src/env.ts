@@ -8,6 +8,7 @@ config({ path: resolve(here, '..', '.env') });
 
 export const SUPABASE_URL = process.env.SUPABASE_URL ?? '';
 export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+export const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? '';
 // Which board the agent watches (single hardcoded board for v1, brief step
 // 9). Precedence: CLI arg (`npm start -- <board-id>`) > env AGENT_BOARD_ID >
 // default. Whichever board you open in the browser, run the agent with that
@@ -18,4 +19,7 @@ export const AGENT_BOARD_ID =
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY. Create ai-agent/.env (see .env.example).');
+}
+if (!ANTHROPIC_API_KEY) {
+  throw new Error('Missing ANTHROPIC_API_KEY. Create ai-agent/.env (see .env.example).');
 }

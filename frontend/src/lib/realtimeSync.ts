@@ -4,6 +4,7 @@ import { applyAwarenessUpdate, encodeAwarenessUpdate, removeAwarenessStates } fr
 import { REALTIME_SUBSCRIBE_STATES, type RealtimePresenceState } from '@supabase/supabase-js';
 import {
   AWARENESS_EVENT,
+  MANUAL_REVIEW_EVENT,
   REMOTE_ORIGIN,
   UPDATE_EVENT,
   createChunkReassembler,
@@ -20,6 +21,7 @@ export type BoardSyncHandle = {
   disconnect: () => void;
   subscribePresence: (callback: () => void) => () => void;
   getPresenceSnapshot: () => PresencePeer[];
+  requestAiReview: () => void;
 };
 
 function derivePresenceList(state: RealtimePresenceState<PresencePayload>): PresencePeer[] {
@@ -139,6 +141,9 @@ export function connectBoardSync(
     },
     getPresenceSnapshot() {
       return presenceSnapshot;
+    },
+    requestAiReview() {
+      channel.send({ type: 'broadcast', event: MANUAL_REVIEW_EVENT, payload: {} }).catch(() => {});
     },
   };
 }

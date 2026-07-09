@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
     "@supabase/supabase-js": "^2.110.1",
     "dotenv": "^16.4.7",
     "y-protocols": "^1.0.7",

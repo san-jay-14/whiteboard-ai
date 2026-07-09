@@ -18,6 +18,10 @@ export const CHUNK_SIZE = 200 * 1024;
 export const UPDATE_EVENT = 'yjs-update';
 export const AWARENESS_EVENT = 'yjs-awareness';
 export const REMOTE_ORIGIN = 'remote';
+// Step 10: manual trigger for an AI reasoning pass. Any client can send this
+// (e.g. an "Ask AI to look" button); the agent listens on the same channel.
+// Unlike yjs-update/yjs-awareness this carries no payload and isn't chunked.
+export const MANUAL_REVIEW_EVENT = 'ai-request-review';
 
 // Internal cap for String.fromCharCode(...) spreads to avoid call-stack
 // limits on large arrays.

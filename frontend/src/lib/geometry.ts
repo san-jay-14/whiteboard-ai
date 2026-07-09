@@ -162,3 +162,20 @@ export function getArrowEndpoints(
   if (!fromShape || !toShape) return null;
   return nearestAnchorPair(fromShape, toShape);
 }
+
+// Bounds for positioning UI overlays (tooltips, review controls) anchored to
+// a shape — step 11. getShapeBounds's arrow case assumes points are offsets
+// from shape.x/y (true for strokes), but an arrow's points are absolute
+// world coordinates (see shapes.ts's createArrow), so reusing it here would
+// double-count shape.x/y. Uses the live, current endpoints instead of the
+// shape's own (possibly stale) points, matching what's actually rendered.
+export function getOverlayAnchor(shape: Shape, getShape: (id: string) => Shape | undefined): Bounds {
+  if (shape.type !== 'arrow') return getShapeBounds(shape);
+  const endpoints = getArrowEndpoints(shape, getShape);
+  if (!endpoints) return { x: shape.x, y: shape.y, width: 0, height: 0 };
+  const xs = [endpoints.from.x, endpoints.to.x];
+  const ys = [endpoints.from.y, endpoints.to.y];
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  return { x: minX, y: minY, width: Math.max(...xs) - minX, height: Math.max(...ys) - minY };
+}

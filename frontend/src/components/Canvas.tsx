@@ -7,6 +7,7 @@ import { useAwareness } from '../hooks/useAwareness';
 import { usePresence } from '../hooks/usePresence';
 import { createEllipse, createRect, createStroke, createArrow, createSticky, createText } from '../lib/shapes';
 import { deleteShapesCascading } from '../lib/deleteShapes';
+import { acceptShape, rejectShape } from '../lib/reviewActions';
 import { getRotatedAABB, getShapeAnchors, nearestAnchor, rectsIntersect, type Anchor } from '../lib/geometry';
 import { STICKY_DEFAULT_SIZE } from '../lib/constants';
 import type { Shape, StickyShape } from '../lib/types';
@@ -14,8 +15,13 @@ import ShapeRenderer from './ShapeRenderer';
 import SelectionTransformer from './SelectionTransformer';
 import CursorLayer from './CursorLayer';
 import PeerList from './PeerList';
+import PendingReviewControls from './PendingReviewControls';
+import ReviewTooltip from './ReviewTooltip';
 import StickyColorPicker from './StickyColorPicker';
 import Toolbar, { type Tool } from './Toolbar';
+
+const GROUP_BOX_COLOR = '#7c3aed';
+const GROUP_BOX_PADDING = 10;
 
 type Point = { x: number; y: number };
 
@@ -35,7 +41,7 @@ const CURSOR_THROTTLE_MS = 50;
 const TRANSFORMABLE_TYPES = new Set<Shape['type']>(['rect', 'ellipse', 'sticky']);
 
 export default function Canvas() {
-  const { doc, shapesMap, awareness } = useBoardSession();
+  const { doc, shapesMap, awareness, boardSync } = useBoardSession();
   const shapes = useShapes();
   const remotePeers = useAwareness();
   const presencePeers = usePresence();
@@ -54,6 +60,7 @@ export default function Canvas() {
   const [arrowDraft, setArrowDraft] = useState<ArrowDraft | null>(null);
   const [editingStickyId, setEditingStickyId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
+  const [hoveredPendingId, setHoveredPendingId] = useState<string | null>(null);
 
   const presentClientIDs = useMemo(
     () => new Set(presencePeers.map((peer) => peer.awarenessClientID)),
@@ -68,6 +75,57 @@ export default function Canvas() {
     () => selectedShapes.filter((s) => TRANSFORMABLE_TYPES.has(s.type)).map((s) => s.id),
     [selectedShapes],
   );
+
+  // step 11: accept/reject controls appear only for a single selected
+  // pendingReview shape, mirroring the singleSelectedSticky pattern above.
+  const singleSelectedPending =
+    selectedShapes.length === 1 && selectedShapes[0].pendingReview ? selectedShapes[0] : null;
+
+  const hoveredShape = hoveredPendingId ? shapes.find((s) => s.id === hoveredPendingId) : undefined;
+
+  const pendingCount = useMemo(() => shapes.filter((s) => s.pendingReview).length, [shapes]);
+
+  // One dashed box per groupId that still has at least one pendingReview
+  // member — a propose_group proposal's shared visual indicator (brief
+  // section 5). Union of each member's rotated AABB, padded.
+  const pendingGroupBoxes = useMemo(() => {
+    const byGroup = new Map<string, Shape[]>();
+    for (const s of shapes) {
+      if (s.pendingReview && s.groupId) {
+        const members = byGroup.get(s.groupId) ?? [];
+        members.push(s);
+        byGroup.set(s.groupId, members);
+      }
+    }
+    return Array.from(byGroup.entries()).map(([groupId, members]) => {
+      const boxes = members.map((m) => getRotatedAABB(m));
+      const minX = Math.min(...boxes.map((b) => b.x));
+      const minY = Math.min(...boxes.map((b) => b.y));
+      const maxX = Math.max(...boxes.map((b) => b.x + b.width));
+      const maxY = Math.max(...boxes.map((b) => b.y + b.height));
+      return {
+        groupId,
+        x: minX - GROUP_BOX_PADDING,
+        y: minY - GROUP_BOX_PADDING,
+        width: maxX - minX + GROUP_BOX_PADDING * 2,
+        height: maxY - minY + GROUP_BOX_PADDING * 2,
+      };
+    });
+  }, [shapes]);
+
+  function handleHoverChange(id: string, hovering: boolean) {
+    setHoveredPendingId((prev) => (hovering ? id : prev === id ? null : prev));
+  }
+
+  function handleAccept(shape: Shape) {
+    acceptShape(shapesMap, shape);
+    setSelectedIds(new Set());
+  }
+
+  function handleReject(shape: Shape) {
+    rejectShape(shapesMap, shape);
+    setSelectedIds(new Set());
+  }
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -328,7 +386,7 @@ export default function Canvas() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-neutral-100">
-      <Toolbar tool={tool} onChange={setTool} />
+      <Toolbar tool={tool} onChange={setTool} onAskAi={boardSync.requestAiReview} />
       {singleSelectedSticky && (
         <StickyColorPicker
           color={singleSelectedSticky.color}
@@ -336,6 +394,23 @@ export default function Canvas() {
         />
       )}
       <PeerList peers={presencePeers} localAwarenessClientID={awareness.clientID} />
+      {pendingCount > 0 && (
+        <div className="absolute bottom-4 right-4 z-10 flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-neutral-700 shadow-md">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-600 text-xs font-semibold text-white">
+            {pendingCount}
+          </span>
+          AI suggestion{pendingCount === 1 ? '' : 's'} to review
+        </div>
+      )}
+      {hoveredShape?.pendingReview && <ReviewTooltip shape={hoveredShape} shapesMap={shapesMap} />}
+      {singleSelectedPending && (
+        <PendingReviewControls
+          shape={singleSelectedPending}
+          shapesMap={shapesMap}
+          onAccept={() => handleAccept(singleSelectedPending)}
+          onReject={() => handleReject(singleSelectedPending)}
+        />
+      )}
       {editingStickyId && editingSticky?.type === 'sticky' && (
         <textarea
           autoFocus
@@ -370,6 +445,22 @@ export default function Canvas() {
         onDblClick={handleDblClick}
       >
         <Layer>
+          {pendingGroupBoxes.map((box) => (
+            <Rect
+              key={box.groupId}
+              x={box.x}
+              y={box.y}
+              width={box.width}
+              height={box.height}
+              stroke={GROUP_BOX_COLOR}
+              dash={[8, 5]}
+              strokeWidth={2}
+              fill="rgba(124,58,237,0.04)"
+              cornerRadius={8}
+              listening={false}
+            />
+          ))}
+
           {shapes.map((shape) => (
             <ShapeRenderer
               key={shape.id}
@@ -382,6 +473,7 @@ export default function Canvas() {
               onDragEnd={(e) => handleShapeDragEnd(shape, e)}
               hideText={shape.id === editingStickyId}
               registerNode={TRANSFORMABLE_TYPES.has(shape.type) ? registerNode(shape.id) : undefined}
+              onHoverChange={(hovering) => handleHoverChange(shape.id, hovering)}
             />
           ))}
 

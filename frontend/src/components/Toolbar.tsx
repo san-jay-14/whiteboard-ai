@@ -12,9 +12,10 @@ const TOOLS: { id: Tool; label: string }[] = [
 type Props = {
   tool: Tool;
   onChange: (tool: Tool) => void;
+  onAskAi: () => void;
 };
 
-export default function Toolbar({ tool, onChange }: Props) {
+export default function Toolbar({ tool, onChange, onAskAi }: Props) {
   return (
     <div className="absolute left-4 top-4 z-10 flex gap-1 rounded-lg bg-white p-1 shadow-md">
       {TOOLS.map((t) => (
@@ -29,6 +30,13 @@ export default function Toolbar({ tool, onChange }: Props) {
           {t.label}
         </button>
       ))}
+      <button
+        type="button"
+        onClick={onAskAi}
+        className="rounded-md px-3 py-1.5 text-sm font-medium text-violet-700 transition-colors hover:bg-violet-50"
+      >
+        Ask AI to look
+      </button>
       <span className="ml-2 self-center pr-2 text-xs text-neutral-400">
         Double-click canvas for text, sticky for edit · Shift-click or drag to multi-select · Delete/Backspace to remove
       </span>

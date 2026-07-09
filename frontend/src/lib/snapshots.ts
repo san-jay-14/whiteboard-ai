@@ -24,6 +24,10 @@ async function writeSnapshot(doc: Y.Doc, shapesMap: Y.Map<Shape>, boardId: strin
   // shape_graph is the denormalized JSON copy of the shape map (brief
   // section 2) so the MCP server / AI agent never decode Yjs binary.
   const shapeGraph = shapesMap.toJSON();
+  // board_snapshots.updated_at doubles as the board list's "last updated"
+  // signal (step 12) — boards.updated_at only changes at creation, so the
+  // list reads snapshot freshness instead rather than adding a new write
+  // path (and RLS grant) just to keep a second timestamp in sync.
   const { error } = await supabase.from('board_snapshots').upsert(
     {
       board_id: boardId,

@@ -13,15 +13,23 @@ import {
 import type { ChunkedPayload } from '../../../shared/transport';
 import type { PresencePayload } from '../../../shared/presence';
 import { supabase } from './supabaseClient';
+import { fetchLatestSnapshot } from './snapshots';
 import type { LocalUser } from './identity';
 
 export type PresencePeer = PresencePayload;
+
+// step 12: 'connected' is also the initial value — there's no meaningful
+// "reconnecting" state before the very first successful subscribe (that
+// window is already covered by BoardSessionHost's "Loading board…" screen).
+export type ConnectionStatus = 'connected' | 'reconnecting';
 
 export type BoardSyncHandle = {
   disconnect: () => void;
   subscribePresence: (callback: () => void) => () => void;
   getPresenceSnapshot: () => PresencePeer[];
   requestAiReview: () => void;
+  subscribeConnectionStatus: (callback: () => void) => () => void;
+  getConnectionStatus: () => ConnectionStatus;
 };
 
 function derivePresenceList(state: RealtimePresenceState<PresencePayload>): PresencePeer[] {
@@ -93,6 +101,30 @@ export function connectBoardSync(
     presenceListeners.forEach((listener) => listener());
   });
 
+  // step 12: reconnect/resync handling. Broadcast delivers nothing to a
+  // disconnected client — it doesn't queue for later delivery — so a drop
+  // can silently miss updates. On every SUBSCRIBED *after* the first, re-fetch
+  // the latest snapshot and apply it (same as the initial join flow) to
+  // catch up before resuming live broadcast.
+  let hasConnectedOnce = false;
+  let connectionStatus: ConnectionStatus = 'connected';
+  const connectionListeners = new Set<() => void>();
+
+  function setConnectionStatus(next: ConnectionStatus) {
+    if (connectionStatus === next) return;
+    connectionStatus = next;
+    connectionListeners.forEach((listener) => listener());
+  }
+
+  async function resyncFromSnapshot() {
+    try {
+      const snapshot = await fetchLatestSnapshot(boardId);
+      if (snapshot) Y.applyUpdate(doc, snapshot, REMOTE_ORIGIN);
+    } catch (e) {
+      console.error('post-reconnect resync failed', e);
+    }
+  }
+
   doc.on('update', handleLocalDocUpdate);
   awareness.on('update', handleLocalAwarenessUpdate);
 
@@ -103,6 +135,11 @@ export function connectBoardSync(
     if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
       updateSender.onSubscribed();
       awarenessSender.onSubscribed();
+      if (hasConnectedOnce) {
+        void resyncFromSnapshot();
+      }
+      hasConnectedOnce = true;
+      setConnectionStatus('connected');
       channel
         .track({
           name: localUser.name,
@@ -115,6 +152,7 @@ export function connectBoardSync(
       // SUBSCRIBED again (Realtime auto-rejoins the channel on reconnect).
       updateSender.onDisconnected();
       awarenessSender.onDisconnected();
+      if (hasConnectedOnce) setConnectionStatus('reconnecting');
     }
   });
 
@@ -133,6 +171,7 @@ export function connectBoardSync(
       updateReassembler.clear();
       awarenessReassembler.clear();
       presenceListeners.clear();
+      connectionListeners.clear();
       supabase.removeChannel(channel);
     },
     subscribePresence(callback) {
@@ -144,6 +183,13 @@ export function connectBoardSync(
     },
     requestAiReview() {
       channel.send({ type: 'broadcast', event: MANUAL_REVIEW_EVENT, payload: {} }).catch(() => {});
+    },
+    subscribeConnectionStatus(callback) {
+      connectionListeners.add(callback);
+      return () => connectionListeners.delete(callback);
+    },
+    getConnectionStatus() {
+      return connectionStatus;
     },
   };
 }

@@ -5,6 +5,7 @@ import { useBoardSession } from '../lib/BoardSessionContext';
 import { useShapes } from '../hooks/useShapes';
 import { useAwareness } from '../hooks/useAwareness';
 import { usePresence } from '../hooks/usePresence';
+import { useConnectionStatus } from '../hooks/useConnectionStatus';
 import { createEllipse, createRect, createStroke, createArrow, createSticky, createText } from '../lib/shapes';
 import { deleteShapesCascading } from '../lib/deleteShapes';
 import { acceptShape, rejectShape } from '../lib/reviewActions';
@@ -17,11 +18,18 @@ import CursorLayer from './CursorLayer';
 import PeerList from './PeerList';
 import PendingReviewControls from './PendingReviewControls';
 import ReviewTooltip from './ReviewTooltip';
+import ShareControl from './ShareControl';
 import StickyColorPicker from './StickyColorPicker';
 import Toolbar, { type Tool } from './Toolbar';
 
 const GROUP_BOX_COLOR = '#7c3aed';
 const GROUP_BOX_PADDING = 10;
+
+type Props = {
+  ownerId: string;
+  uid: string;
+  onBack: () => void;
+};
 
 type Point = { x: number; y: number };
 
@@ -40,11 +48,12 @@ const MIN_DRAG = 3;
 const CURSOR_THROTTLE_MS = 50;
 const TRANSFORMABLE_TYPES = new Set<Shape['type']>(['rect', 'ellipse', 'sticky']);
 
-export default function Canvas() {
-  const { doc, shapesMap, awareness, boardSync } = useBoardSession();
+export default function Canvas({ ownerId, uid, onBack }: Props) {
+  const { boardId, doc, shapesMap, awareness, boardSync } = useBoardSession();
   const shapes = useShapes();
   const remotePeers = useAwareness();
   const presencePeers = usePresence();
+  const connectionStatus = useConnectionStatus();
   const stageRef = useRef<Konva.Stage>(null);
   const dragStart = useRef<Point | null>(null);
   const lastCursorSentAt = useRef(0);
@@ -386,7 +395,7 @@ export default function Canvas() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-neutral-100">
-      <Toolbar tool={tool} onChange={setTool} onAskAi={boardSync.requestAiReview} />
+      <Toolbar tool={tool} onChange={setTool} onAskAi={boardSync.requestAiReview} onBack={onBack} />
       {singleSelectedSticky && (
         <StickyColorPicker
           color={singleSelectedSticky.color}
@@ -394,6 +403,20 @@ export default function Canvas() {
         />
       )}
       <PeerList peers={presencePeers} localAwarenessClientID={awareness.clientID} />
+      {uid === ownerId && <ShareControl boardId={boardId} />}
+      {connectionStatus === 'reconnecting' && (
+        <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-lg bg-amber-500 px-4 py-1.5 text-sm font-medium text-white shadow-md">
+          Reconnecting…
+        </div>
+      )}
+      {shapes.length === 0 && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <p className="max-w-xs text-center text-sm text-neutral-400">
+            Nothing here yet — pick a tool above to start drawing, or click "Ask AI to look" once you've added a
+            few shapes.
+          </p>
+        </div>
+      )}
       {pendingCount > 0 && (
         <div className="absolute bottom-4 right-4 z-10 flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-neutral-700 shadow-md">
           <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-600 text-xs font-semibold text-white">

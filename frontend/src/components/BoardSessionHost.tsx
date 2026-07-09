@@ -6,13 +6,16 @@ import Canvas from './Canvas';
 
 type Props = {
   boardId: string;
+  ownerId: string;
+  uid: string;
   localUser: LocalUser;
+  onBack: () => void;
 };
 
 // Owns one board's session lifecycle. Rendered with key={boardId} so
 // switching boards fully remounts this, guaranteeing the previous session
 // is torn down (effect cleanup) before the next is opened.
-export default function BoardSessionHost({ boardId, localUser }: Props) {
+export default function BoardSessionHost({ boardId, ownerId, uid, localUser, onBack }: Props) {
   const [session, setSession] = useState<BoardSession | null>(null);
 
   useEffect(() => {
@@ -56,7 +59,7 @@ export default function BoardSessionHost({ boardId, localUser }: Props) {
 
   return (
     <BoardSessionContext.Provider value={session}>
-      <Canvas />
+      <Canvas ownerId={ownerId} uid={uid} onBack={onBack} />
     </BoardSessionContext.Provider>
   );
 }

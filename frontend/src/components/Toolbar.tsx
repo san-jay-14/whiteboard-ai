@@ -13,11 +13,20 @@ type Props = {
   tool: Tool;
   onChange: (tool: Tool) => void;
   onAskAi: () => void;
+  onBack: () => void;
 };
 
-export default function Toolbar({ tool, onChange, onAskAi }: Props) {
+export default function Toolbar({ tool, onChange, onAskAi, onBack }: Props) {
   return (
     <div className="absolute left-4 top-4 z-10 flex gap-1 rounded-lg bg-white p-1 shadow-md">
+      <button
+        type="button"
+        onClick={onBack}
+        className="rounded-md px-3 py-1.5 text-sm font-medium text-neutral-500 transition-colors hover:bg-neutral-100"
+      >
+        ← Boards
+      </button>
+      <span className="my-1 w-px bg-neutral-200" />
       {TOOLS.map((t) => (
         <button
           key={t.id}

@@ -17,6 +17,14 @@ export default function PeerList({ peers, localAwarenessClientID }: Props) {
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: peer.color }} />
             <span className="truncate">
               {peer.name}
+              {peer.kind === 'agent' && (
+                <span
+                  className="ml-1 rounded px-1 py-0.5 text-[10px] font-semibold text-white"
+                  style={{ backgroundColor: peer.color }}
+                >
+                  AI
+                </span>
+              )}
               {peer.awarenessClientID === localAwarenessClientID && (
                 <span className="text-neutral-400"> (you)</span>
               )}

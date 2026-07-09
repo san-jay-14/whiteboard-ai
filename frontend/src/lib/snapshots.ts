@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import { supabase } from './supabaseClient';
-import { bytesToByteaHex, byteaHexToBytes } from './bytea';
+import { bytesToByteaHex, byteaHexToBytes } from '../../../shared/bytea';
 import type { Shape } from './types';
 
 const DEBOUNCE_MS = 3000;

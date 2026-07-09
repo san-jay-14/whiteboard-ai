@@ -1,15 +1,22 @@
 {
   "name": "ai-agent",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.1",
+    "dotenv": "^16.4.7",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.31"
+  },
   "devDependencies": {
-    "typescript": "^5.7.3",
-    "@types/node": "^22.10.5"
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
   }
 }

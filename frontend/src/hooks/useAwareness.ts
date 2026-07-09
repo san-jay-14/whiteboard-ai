@@ -7,6 +7,7 @@ export type RemotePeer = {
   name: string;
   color: string;
   cursor: { x: number; y: number } | null;
+  kind?: 'agent' | 'human';
 };
 
 function computeRemotePeers(awareness: Awareness): RemotePeer[] {
@@ -14,7 +15,13 @@ function computeRemotePeers(awareness: Awareness): RemotePeer[] {
   awareness.getStates().forEach((state, clientID) => {
     if (clientID === awareness.clientID) return; // exclude local
     if (!state || typeof state.name !== 'string' || typeof state.color !== 'string') return;
-    peers.push({ clientID, name: state.name, color: state.color, cursor: state.cursor ?? null });
+    peers.push({
+      clientID,
+      name: state.name,
+      color: state.color,
+      cursor: state.cursor ?? null,
+      kind: state.kind === 'agent' ? 'agent' : 'human',
+    });
   });
   return peers;
 }

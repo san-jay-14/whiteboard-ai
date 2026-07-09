@@ -1,7 +1,7 @@
 // Postgres `bytea` <-> Uint8Array helpers. board_snapshots.yjs_state is a
 // bytea column; PostgREST sends/receives it as a hex string in the
-// `\x<hex>` format (the default bytea_output). We convert the raw Yjs
-// binary to that format on write and parse it back on read.
+// `\x<hex>` format (the default bytea_output). Shared by the frontend
+// (snapshot read/write) and the AI agent (snapshot read on join).
 
 export function bytesToByteaHex(bytes: Uint8Array): string {
   let hex = '';

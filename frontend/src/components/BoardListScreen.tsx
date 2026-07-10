@@ -35,9 +35,9 @@ export default function BoardListScreen({ boards, loading, creating, onOpen, onC
   };
 
   return (
-    <div className="h-screen w-screen overflow-y-auto bg-neutral-100">
+    <div className="h-screen w-screen overflow-y-auto bg-neutral-100 dark:bg-neutral-900">
       <div className="mx-auto max-w-4xl px-6 py-10">
-        <h1 className="mb-6 text-2xl font-semibold text-neutral-900">Your boards</h1>
+        <h1 className="mb-6 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Your boards</h1>
 
         <div className="mb-8 flex gap-2">
           <input
@@ -45,7 +45,7 @@ export default function BoardListScreen({ boards, loading, creating, onOpen, onC
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
             placeholder="New board name"
-            className="flex-1 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 outline-none focus:border-neutral-400"
+            className="flex-1 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 outline-none focus:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
           />
           <button
             type="button"

@@ -1,6 +1,17 @@
 import { STICKY_COLORS, STICKY_DEFAULT_SIZE } from './constants';
+import { DEFAULT_ITEM_STYLE, type ItemStyle } from './itemStyle';
 import { nearestAnchorPair } from './geometry';
-import type { ArrowShape, EllipseShape, RectShape, Shape, StickyShape, StrokeShape, TextShape } from './types';
+import type {
+  ArrowShape,
+  DiamondShape,
+  EllipseShape,
+  LineShape,
+  RectShape,
+  Shape,
+  StickyShape,
+  StrokeShape,
+  TextShape,
+} from './types';
 
 // No auth wired up yet — every shape created locally is attributed to this
 // fixed id until step 4+ introduces real user identity.
@@ -17,20 +28,119 @@ function base(x: number, y: number) {
   };
 }
 
-export function createRect(x: number, y: number, width: number, height: number): RectShape {
-  return { ...base(x, y), type: 'rect', width, height, fill: '#38bdf8', stroke: '#0369a1' };
+// Style fields shared by every shape's outline (drawn from the current item
+// style). Colours/dimensions are set per shape type below.
+function outlineStyle(style: ItemStyle) {
+  return { strokeStyle: style.strokeStyle, opacity: style.opacity };
 }
 
-export function createEllipse(x: number, y: number, radiusX: number, radiusY: number): EllipseShape {
-  return { ...base(x, y), type: 'ellipse', radiusX, radiusY, fill: '#facc15', stroke: '#a16207' };
+export function createRect(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  style: ItemStyle = DEFAULT_ITEM_STYLE,
+): RectShape {
+  return {
+    ...base(x, y),
+    type: 'rect',
+    width,
+    height,
+    fill: style.backgroundColor,
+    stroke: style.strokeColor,
+    strokeWidth: style.strokeWidth,
+    edges: style.edges,
+    ...outlineStyle(style),
+  };
 }
 
-export function createText(x: number, y: number, text: string): TextShape {
-  return { ...base(x, y), type: 'text', text, fontSize: 20 };
+export function createEllipse(
+  x: number,
+  y: number,
+  radiusX: number,
+  radiusY: number,
+  style: ItemStyle = DEFAULT_ITEM_STYLE,
+): EllipseShape {
+  return {
+    ...base(x, y),
+    type: 'ellipse',
+    radiusX,
+    radiusY,
+    fill: style.backgroundColor,
+    stroke: style.strokeColor,
+    strokeWidth: style.strokeWidth,
+    ...outlineStyle(style),
+  };
 }
 
-export function createStroke(x: number, y: number, points: number[]): StrokeShape {
-  return { ...base(x, y), type: 'stroke', points, strokeWidth: 3, color: '#111827' };
+export function createDiamond(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  style: ItemStyle = DEFAULT_ITEM_STYLE,
+): DiamondShape {
+  return {
+    ...base(x, y),
+    type: 'diamond',
+    width,
+    height,
+    fill: style.backgroundColor,
+    stroke: style.strokeColor,
+    strokeWidth: style.strokeWidth,
+    edges: style.edges,
+    ...outlineStyle(style),
+  };
+}
+
+export function createText(
+  x: number,
+  y: number,
+  text: string,
+  style: ItemStyle = DEFAULT_ITEM_STYLE,
+): TextShape {
+  return {
+    ...base(x, y),
+    type: 'text',
+    text,
+    fontSize: style.fontSize,
+    fontFamily: style.fontFamily,
+    textAlign: style.textAlign,
+    color: style.strokeColor,
+    opacity: style.opacity,
+  };
+}
+
+export function createStroke(
+  x: number,
+  y: number,
+  points: number[],
+  style: ItemStyle = DEFAULT_ITEM_STYLE,
+): StrokeShape {
+  return {
+    ...base(x, y),
+    type: 'stroke',
+    points,
+    strokeWidth: style.strokeWidth,
+    color: style.strokeColor,
+    ...outlineStyle(style),
+  };
+}
+
+export function createLine(
+  x: number,
+  y: number,
+  points: number[],
+  style: ItemStyle = DEFAULT_ITEM_STYLE,
+): LineShape {
+  return {
+    ...base(x, y),
+    type: 'line',
+    points,
+    strokeWidth: style.strokeWidth,
+    color: style.strokeColor,
+    ...outlineStyle(style),
+  };
 }
 
 export function createSticky(x: number, y: number): StickyShape {
@@ -47,7 +157,11 @@ export function createSticky(x: number, y: number): StickyShape {
 // points stores the pair chosen at creation time for schema completeness —
 // rendering always recomputes live from fromShapeId/toShapeId instead of
 // reading this back (see geometry.ts's getArrowEndpoints).
-export function createArrow(fromShape: Shape, toShape: Shape): ArrowShape {
+export function createArrow(
+  fromShape: Shape,
+  toShape: Shape,
+  style: ItemStyle = DEFAULT_ITEM_STYLE,
+): ArrowShape {
   const { from, to } = nearestAnchorPair(fromShape, toShape);
   return {
     ...base(from.x, from.y),
@@ -55,5 +169,7 @@ export function createArrow(fromShape: Shape, toShape: Shape): ArrowShape {
     fromShapeId: fromShape.id,
     toShapeId: toShape.id,
     points: [from.x, from.y, to.x, to.y],
+    strokeWidth: style.strokeWidth,
+    ...outlineStyle(style),
   };
 }

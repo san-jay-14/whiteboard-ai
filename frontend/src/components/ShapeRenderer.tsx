@@ -2,13 +2,15 @@ import { Arrow, Ellipse, Group, Label, Line, Rect, Tag, Text } from 'react-konva
 import type Konva from 'konva';
 import type * as Y from 'yjs';
 import { getArrowEndpoints, getShapeBounds } from '../lib/geometry';
-import type { Shape } from '../lib/types';
+import { FONT_FAMILY_CSS } from '../lib/itemStyle';
+import type { Shape, StrokeStyle } from '../lib/types';
 
-const SELECTED_STROKE = '#111827';
+const SELECTED_STROKE = '#6965db'; // Excalidraw selection violet
 // Matches shared/presence.ts's AGENT_COLOR — same violet identifies the AI
 // everywhere (cursor, presence chip, and now pendingReview shapes).
 const AI_COLOR = '#7c3aed';
 const PENDING_DASH = [6, 4];
+const CORNER_RADIUS = 12; // "round" edges for rect/diamond
 
 type Props = {
   shape: Shape;
@@ -22,13 +24,21 @@ type Props = {
   onDragStart?: () => void;
   onDragEnd?: (e: Konva.KonvaEventObject<DragEvent>) => void;
   hideText?: boolean;
-  // Only used for rect/ellipse/sticky — lets Canvas attach a Transformer.
+  // Only used for rect/ellipse/diamond/sticky — lets Canvas attach a Transformer.
   registerNode?: (node: Konva.Node | null) => void;
   // step 11: drives the reviewReason tooltip in Canvas. Only meaningful for
   // pendingReview shapes, but wired for every type since the hover itself
   // is generic.
   onHoverChange?: (hovering: boolean) => void;
 };
+
+// Dash pattern for a non-selected outline, derived from the stroke style and
+// scaled to the stroke width so it reads consistently at any thickness.
+function dashArray(style: StrokeStyle | undefined, w: number): number[] | undefined {
+  if (style === 'dashed') return [w * 4, w * 2.5];
+  if (style === 'dotted') return [w, w * 2];
+  return undefined;
+}
 
 // Small violet pill marking a shape as AI-authored-and-pending, per brief
 // section 5 ("a small 'AI' badge"). Non-interactive so it never steals
@@ -66,6 +76,7 @@ export default function ShapeRenderer({
   const handlers = {
     id: shape.id,
     draggable,
+    opacity: (shape.opacity ?? 100) / 100,
     onClick: onSelect,
     onDragStart,
     onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => {
@@ -79,11 +90,13 @@ export default function ShapeRenderer({
     onMouseLeave: () => onHoverChange?.(false),
   };
 
-  // Selection takes visual priority over the pendingReview treatment when
-  // both apply (both use a dashed outline anyway); pendingReview otherwise
-  // recolors the outline violet so it reads distinctly from a plain shape.
+  // Shared outline treatment. Selection > pendingReview > plain style; the
+  // first two both use the violet dashed look, otherwise the shape's own
+  // strokeStyle/width apply.
+  const baseWidth = shape.strokeWidth ?? 2;
+  const strokeWidth = selected ? baseWidth + 1.5 : pending ? baseWidth + 0.5 : baseWidth;
   const outlineStroke = (fallback: string) => (selected ? SELECTED_STROKE : pending ? AI_COLOR : fallback);
-  const outlineDash = selected || pending ? PENDING_DASH : undefined;
+  const dash = selected || pending ? PENDING_DASH : dashArray(shape.strokeStyle, baseWidth);
 
   switch (shape.type) {
     case 'rect': {
@@ -97,10 +110,35 @@ export default function ShapeRenderer({
             width={shape.width}
             height={shape.height}
             rotation={shape.rotation ?? 0}
+            cornerRadius={shape.edges === 'round' ? CORNER_RADIUS : 0}
             fill={shape.fill}
             stroke={outlineStroke(shape.stroke)}
-            strokeWidth={selected ? 3 : pending ? 2.5 : 2}
-            dash={outlineDash}
+            strokeWidth={strokeWidth}
+            dash={dash}
+            {...handlers}
+          />
+          {pending && <AiBadge x={bounds.x} y={bounds.y - 18} />}
+        </>
+      );
+    }
+    case 'diamond': {
+      const bounds = getShapeBounds(shape);
+      const w = shape.width;
+      const h = shape.height;
+      return (
+        <>
+          <Line
+            ref={registerNode}
+            x={shape.x}
+            y={shape.y}
+            points={[w / 2, 0, w, h / 2, w / 2, h, 0, h / 2]}
+            closed
+            rotation={shape.rotation ?? 0}
+            lineJoin={shape.edges === 'round' ? 'round' : 'miter'}
+            fill={shape.fill}
+            stroke={outlineStroke(shape.stroke)}
+            strokeWidth={strokeWidth}
+            dash={dash}
             {...handlers}
           />
           {pending && <AiBadge x={bounds.x} y={bounds.y - 18} />}
@@ -120,8 +158,8 @@ export default function ShapeRenderer({
             rotation={shape.rotation ?? 0}
             fill={shape.fill}
             stroke={outlineStroke(shape.stroke)}
-            strokeWidth={selected ? 3 : pending ? 2.5 : 2}
-            dash={outlineDash}
+            strokeWidth={strokeWidth}
+            dash={dash}
             {...handlers}
           />
           {pending && <AiBadge x={bounds.x} y={bounds.y - 18} />}
@@ -145,7 +183,17 @@ export default function ShapeRenderer({
               listening={false}
             />
           )}
-          <Text x={0} y={0} text={shape.text} fontSize={shape.fontSize} fill={selected ? SELECTED_STROKE : '#1f2937'} />
+          {!hideText && (
+            <Text
+              x={0}
+              y={0}
+              text={shape.text}
+              fontSize={shape.fontSize}
+              fontFamily={FONT_FAMILY_CSS[shape.fontFamily ?? 'hand']}
+              align={shape.textAlign ?? 'left'}
+              fill={selected ? SELECTED_STROKE : shape.color ?? '#1e1e1e'}
+            />
+          )}
           {pending && <AiBadge x={-4} y={-18} />}
         </Group>
       );
@@ -159,7 +207,25 @@ export default function ShapeRenderer({
             points={shape.points}
             stroke={outlineStroke(shape.color)}
             strokeWidth={selected ? shape.strokeWidth + 2 : shape.strokeWidth}
-            dash={outlineDash}
+            dash={dash}
+            hitStrokeWidth={Math.max(shape.strokeWidth, 16)}
+            lineCap="round"
+            lineJoin="round"
+            {...handlers}
+          />
+          {pending && <AiBadge x={shape.x} y={shape.y - 18} />}
+        </>
+      );
+    case 'line':
+      return (
+        <>
+          <Line
+            x={shape.x}
+            y={shape.y}
+            points={shape.points}
+            stroke={outlineStroke(shape.color)}
+            strokeWidth={strokeWidth}
+            dash={dash}
             hitStrokeWidth={Math.max(shape.strokeWidth, 16)}
             lineCap="round"
             lineJoin="round"
@@ -177,7 +243,7 @@ export default function ShapeRenderer({
             fill={shape.color}
             stroke={selected ? SELECTED_STROKE : pending ? AI_COLOR : 'rgba(0,0,0,0.15)'}
             strokeWidth={selected ? 3 : pending ? 2.5 : 1}
-            dash={outlineDash}
+            dash={selected || pending ? PENDING_DASH : undefined}
             shadowBlur={4}
             shadowOpacity={0.2}
           />
@@ -199,10 +265,11 @@ export default function ShapeRenderer({
             x={0}
             y={0}
             points={[from.x, from.y, to.x, to.y]}
-            stroke={outlineStroke('#1f2937')}
-            fill={outlineStroke('#1f2937')}
-            strokeWidth={selected ? 4 : pending ? 3 : 2}
-            dash={outlineDash}
+            stroke={outlineStroke('#1e1e1e')}
+            fill={outlineStroke('#1e1e1e')}
+            strokeWidth={selected ? baseWidth + 2 : baseWidth}
+            dash={dash}
+            opacity={(shape.opacity ?? 100) / 100}
             pointerLength={10}
             pointerWidth={10}
             id={shape.id}

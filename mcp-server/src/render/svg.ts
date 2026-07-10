@@ -31,23 +31,60 @@ function rotateAttr(shape: Shape): string {
   return ` transform="rotate(${rotation} ${shape.x} ${shape.y})"`;
 }
 
+function strokeW(shape: Shape): number {
+  return shape.strokeWidth ?? 2;
+}
+
 function dashAttr(shape: Shape): string {
   // AI proposals (step 10+) render dashed/pending in the frontend; mirror it
-  // here so the image stays representative once such shapes exist.
-  return shape.pendingReview ? ' stroke-dasharray="6 4"' : '';
+  // here so the image stays representative once such shapes exist. Otherwise
+  // honour the shape's own strokeStyle.
+  if (shape.pendingReview) return ' stroke-dasharray="6 4"';
+  const w = strokeW(shape);
+  if (shape.strokeStyle === 'dashed') return ` stroke-dasharray="${w * 4} ${w * 2.5}"`;
+  if (shape.strokeStyle === 'dotted') return ` stroke-dasharray="${w} ${w * 2}"`;
+  return '';
+}
+
+function opacityAttr(shape: Shape): string {
+  const o = shape.opacity ?? 100;
+  return o < 100 ? ` opacity="${o / 100}"` : '';
 }
 
 function renderRect(shape: Extract<Shape, { type: 'rect' }>): string {
+  const round = shape.edges === 'round' ? ' rx="12"' : '';
   return (
-    `<rect x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" ` +
-    `fill="${esc(shape.fill)}" stroke="${esc(shape.stroke)}" stroke-width="2"${dashAttr(shape)}${rotateAttr(shape)} />`
+    `<rect x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}"${round} ` +
+    `fill="${esc(shape.fill)}" stroke="${esc(shape.stroke)}" stroke-width="${strokeW(shape)}"` +
+    `${dashAttr(shape)}${opacityAttr(shape)}${rotateAttr(shape)} />`
+  );
+}
+
+function renderDiamond(shape: Extract<Shape, { type: 'diamond' }>): string {
+  const { x, y, width: w, height: h } = shape;
+  const pts = `${x + w / 2},${y} ${x + w},${y + h / 2} ${x + w / 2},${y + h} ${x},${y + h / 2}`;
+  return (
+    `<polygon points="${pts}" fill="${esc(shape.fill)}" stroke="${esc(shape.stroke)}" ` +
+    `stroke-width="${strokeW(shape)}"${dashAttr(shape)}${opacityAttr(shape)}${rotateAttr(shape)} />`
   );
 }
 
 function renderEllipse(shape: Extract<Shape, { type: 'ellipse' }>): string {
   return (
     `<ellipse cx="${shape.x}" cy="${shape.y}" rx="${shape.radiusX}" ry="${shape.radiusY}" ` +
-    `fill="${esc(shape.fill)}" stroke="${esc(shape.stroke)}" stroke-width="2"${dashAttr(shape)}${rotateAttr(shape)} />`
+    `fill="${esc(shape.fill)}" stroke="${esc(shape.stroke)}" stroke-width="${strokeW(shape)}"` +
+    `${dashAttr(shape)}${opacityAttr(shape)}${rotateAttr(shape)} />`
+  );
+}
+
+function renderLine(shape: Extract<Shape, { type: 'line' }>): string {
+  const pts: string[] = [];
+  for (let i = 0; i + 1 < shape.points.length; i += 2) {
+    pts.push(`${shape.x + shape.points[i]},${shape.y + shape.points[i + 1]}`);
+  }
+  return (
+    `<polyline points="${pts.join(' ')}" fill="none" stroke="${esc(shape.color)}" ` +
+    `stroke-width="${shape.strokeWidth}" stroke-linecap="round"${dashAttr(shape)}${opacityAttr(shape)} />`
   );
 }
 
@@ -68,7 +105,7 @@ function renderStroke(shape: Extract<Shape, { type: 'stroke' }>): string {
   }
   return (
     `<polyline points="${pts.join(' ')}" fill="none" stroke="${esc(shape.color)}" ` +
-    `stroke-width="${shape.strokeWidth}" stroke-linecap="round" stroke-linejoin="round" />`
+    `stroke-width="${shape.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"${opacityAttr(shape)} />`
   );
 }
 
@@ -174,9 +211,11 @@ function computeViewBox(shapes: Shape[], graph: ShapeGraph): Bounds {
   };
 }
 
-// Renders in insertion (≈creation) order, matching the frontend's z-order.
+// Renders sorted by (z, createdAt), matching the frontend's z-order.
 export function shapeGraphToSvg(graph: ShapeGraph): string {
-  const shapes = Object.values(graph);
+  const shapes = Object.values(graph).sort(
+    (a, b) => (a.z ?? 0) - (b.z ?? 0) || a.createdAt - b.createdAt,
+  );
   const vb = computeViewBox(shapes, graph);
 
   const body: string[] = [];
@@ -184,6 +223,12 @@ export function shapeGraphToSvg(graph: ShapeGraph): string {
     switch (shape.type) {
       case 'rect':
         body.push(renderRect(shape));
+        break;
+      case 'diamond':
+        body.push(renderDiamond(shape));
+        break;
+      case 'line':
+        body.push(renderLine(shape));
         break;
       case 'ellipse':
         body.push(renderEllipse(shape));

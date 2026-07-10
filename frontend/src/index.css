@@ -1,1 +1,14 @@
 @import "tailwindcss";
+
+/* Class-based dark mode for Tailwind v4: `dark:` utilities apply whenever an
+   ancestor (here <html>) carries the `.dark` class, toggled by lib/theme.ts. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --canvas-bg: #f5f5f5; /* matches the original bg-neutral-100 */
+}
+
+.dark {
+  --canvas-bg: #121212; /* Excalidraw-style dark canvas */
+  color-scheme: dark;
+}

@@ -68,7 +68,7 @@ function App() {
   const selectedBoard = boards.find((b) => b.id === selectedBoardId) ?? null;
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-neutral-100">
+    <div className="relative h-screen w-screen overflow-hidden bg-neutral-100 dark:bg-neutral-900">
       <ToastHost />
       {authError ? (
         <div className="flex h-full w-full items-center justify-center px-8">

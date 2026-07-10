@@ -39,10 +39,30 @@ function renderRect(shape: Extract<Shape, { type: 'rect' }>): string {
   );
 }
 
+function renderDiamond(shape: Extract<Shape, { type: 'diamond' }>): string {
+  const { x, y, width: w, height: h } = shape;
+  const pts = `${x + w / 2},${y} ${x + w},${y + h / 2} ${x + w / 2},${y + h} ${x},${y + h / 2}`;
+  return (
+    `<polygon points="${pts}" fill="${esc(shape.fill)}" stroke="${esc(shape.stroke)}" ` +
+    `stroke-width="2"${dashAttr(shape)}${rotateAttr(shape)} />`
+  );
+}
+
 function renderEllipse(shape: Extract<Shape, { type: 'ellipse' }>): string {
   return (
     `<ellipse cx="${shape.x}" cy="${shape.y}" rx="${shape.radiusX}" ry="${shape.radiusY}" ` +
     `fill="${esc(shape.fill)}" stroke="${esc(shape.stroke)}" stroke-width="2"${dashAttr(shape)}${rotateAttr(shape)} />`
+  );
+}
+
+function renderLine(shape: Extract<Shape, { type: 'line' }>): string {
+  const pts: string[] = [];
+  for (let i = 0; i + 1 < shape.points.length; i += 2) {
+    pts.push(`${shape.x + shape.points[i]},${shape.y + shape.points[i + 1]}`);
+  }
+  return (
+    `<polyline points="${pts.join(' ')}" fill="none" stroke="${esc(shape.color)}" ` +
+    `stroke-width="${shape.strokeWidth}" stroke-linecap="round" />`
   );
 }
 
@@ -164,7 +184,9 @@ function computeViewBox(shapes: Shape[], getShape: (id: string) => Shape | undef
 }
 
 export function shapeGraphToSvg(graph: Record<string, Shape>): string {
-  const shapes = Object.values(graph);
+  const shapes = Object.values(graph).sort(
+    (a, b) => (a.z ?? 0) - (b.z ?? 0) || a.createdAt - b.createdAt,
+  );
   const getShape = (id: string) => graph[id];
   const vb = computeViewBox(shapes, getShape);
 
@@ -173,6 +195,12 @@ export function shapeGraphToSvg(graph: Record<string, Shape>): string {
     switch (shape.type) {
       case 'rect':
         body.push(renderRect(shape));
+        break;
+      case 'diamond':
+        body.push(renderDiamond(shape));
+        break;
+      case 'line':
+        body.push(renderLine(shape));
         break;
       case 'ellipse':
         body.push(renderEllipse(shape));

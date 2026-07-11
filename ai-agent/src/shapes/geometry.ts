@@ -23,6 +23,8 @@ export function rotatePoint(point: Anchor, origin: Anchor, degrees: number): Anc
 export function getShapeBounds(shape: Shape): Bounds {
   switch (shape.type) {
     case 'rect':
+    case 'diamond':
+    case 'image':
       return { x: shape.x, y: shape.y, width: shape.width, height: shape.height };
     case 'ellipse':
       return {
@@ -39,6 +41,7 @@ export function getShapeBounds(shape: Shape): Bounds {
       return { x: shape.x, y: shape.y, width, height };
     }
     case 'stroke':
+    case 'line':
     case 'arrow': {
       const xs = shape.points.filter((_, i) => i % 2 === 0);
       const ys = shape.points.filter((_, i) => i % 2 === 1);

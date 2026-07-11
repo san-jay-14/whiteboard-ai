@@ -10,9 +10,9 @@ import {
   createChunkReassembler,
   createGuardedSender,
   type ChunkedPayload,
-} from '../../shared/transport';
-import { AGENT_BROADCAST_ID, AGENT_COLOR, AGENT_NAME, type AwarenessState } from '../../shared/presence';
-import { byteaHexToBytes } from '../../shared/bytea';
+} from './shared/transport';
+import { AGENT_BROADCAST_ID, AGENT_COLOR, AGENT_NAME, type AwarenessState } from './shared/presence';
+import { byteaHexToBytes } from './shared/bytea';
 import type { Shape, ShapeGraph } from './shapes/types';
 import { runReasoningPass } from './reasoning';
 import { executeToolCalls } from './executor';

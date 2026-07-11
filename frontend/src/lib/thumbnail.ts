@@ -4,14 +4,24 @@
 // (unlike mcp-server/ai-agent, this lives in the same package as the
 // canonical Shape model, so there's nothing to keep in sync).
 import { getArrowEndpoints, getRotatedAABB, type Bounds } from './geometry';
+import { FONT_FAMILY_CSS } from './itemStyle';
 import type { Shape } from './types';
 
-const CANVAS_BG = '#f5f5f5'; // matches bg-neutral-100
-const TEXT_FILL = '#1f2937';
-const ARROW_COLOR = '#1f2937';
+const CANVAS_BG = '#f5f5f5'; // matches bg-neutral-100 (default export background)
+const TEXT_FILL = '#1f2937'; // sticky-note text
+const ARROW_COLOR = '#1e1e1e';
 const PADDING = 40;
 const ARROW_POINTER_LENGTH = 10;
 const ARROW_POINTER_WIDTH = 10;
+
+function strokeW(shape: Shape): number {
+  return shape.strokeWidth ?? 2;
+}
+
+function opacityAttr(shape: Shape): string {
+  const o = shape.opacity ?? 100;
+  return o < 100 ? ` opacity="${o / 100}"` : '';
+}
 
 function esc(text: string): string {
   return text
@@ -29,28 +39,63 @@ function rotateAttr(shape: Shape): string {
 }
 
 function dashAttr(shape: Shape): string {
-  return shape.pendingReview ? ' stroke-dasharray="6 4"' : '';
+  if (shape.pendingReview) return ' stroke-dasharray="6 4"';
+  const w = strokeW(shape);
+  if (shape.strokeStyle === 'dashed') return ` stroke-dasharray="${w * 4} ${w * 2.5}"`;
+  if (shape.strokeStyle === 'dotted') return ` stroke-dasharray="${w} ${w * 2}"`;
+  return '';
 }
 
 function renderRect(shape: Extract<Shape, { type: 'rect' }>): string {
+  const round = shape.edges === 'round' ? ' rx="12"' : '';
   return (
-    `<rect x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" ` +
-    `fill="${esc(shape.fill)}" stroke="${esc(shape.stroke)}" stroke-width="2"${dashAttr(shape)}${rotateAttr(shape)} />`
+    `<rect x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}"${round} ` +
+    `fill="${esc(shape.fill)}" stroke="${esc(shape.stroke)}" stroke-width="${strokeW(shape)}"` +
+    `${dashAttr(shape)}${opacityAttr(shape)}${rotateAttr(shape)} />`
+  );
+}
+
+function renderDiamond(shape: Extract<Shape, { type: 'diamond' }>): string {
+  const { x, y, width: w, height: h } = shape;
+  const pts = `${x + w / 2},${y} ${x + w},${y + h / 2} ${x + w / 2},${y + h} ${x},${y + h / 2}`;
+  return (
+    `<polygon points="${pts}" fill="${esc(shape.fill)}" stroke="${esc(shape.stroke)}" ` +
+    `stroke-width="${strokeW(shape)}"${dashAttr(shape)}${opacityAttr(shape)}${rotateAttr(shape)} />`
   );
 }
 
 function renderEllipse(shape: Extract<Shape, { type: 'ellipse' }>): string {
   return (
     `<ellipse cx="${shape.x}" cy="${shape.y}" rx="${shape.radiusX}" ry="${shape.radiusY}" ` +
-    `fill="${esc(shape.fill)}" stroke="${esc(shape.stroke)}" stroke-width="2"${dashAttr(shape)}${rotateAttr(shape)} />`
+    `fill="${esc(shape.fill)}" stroke="${esc(shape.stroke)}" stroke-width="${strokeW(shape)}"` +
+    `${dashAttr(shape)}${opacityAttr(shape)}${rotateAttr(shape)} />`
+  );
+}
+
+function renderImage(shape: Extract<Shape, { type: 'image' }>): string {
+  return (
+    `<image href="${esc(shape.src)}" x="${shape.x}" y="${shape.y}" ` +
+    `width="${shape.width}" height="${shape.height}"${opacityAttr(shape)}${rotateAttr(shape)} />`
+  );
+}
+
+function renderLine(shape: Extract<Shape, { type: 'line' }>): string {
+  const pts: string[] = [];
+  for (let i = 0; i + 1 < shape.points.length; i += 2) {
+    pts.push(`${shape.x + shape.points[i]},${shape.y + shape.points[i + 1]}`);
+  }
+  return (
+    `<polyline points="${pts.join(' ')}" fill="none" stroke="${esc(shape.color)}" ` +
+    `stroke-width="${shape.strokeWidth}" stroke-linecap="round"${dashAttr(shape)}${opacityAttr(shape)} />`
   );
 }
 
 function renderText(shape: Extract<Shape, { type: 'text' }>): string {
   const baseline = shape.y + shape.fontSize * 0.8;
+  const family = FONT_FAMILY_CSS[shape.fontFamily ?? 'hand'];
   return (
-    `<text x="${shape.x}" y="${baseline}" font-family="sans-serif" font-size="${shape.fontSize}" ` +
-    `fill="${TEXT_FILL}">${esc(shape.text)}</text>`
+    `<text x="${shape.x}" y="${baseline}" font-family="${esc(family)}" font-size="${shape.fontSize}" ` +
+    `fill="${esc(shape.color ?? '#1e1e1e')}"${opacityAttr(shape)}>${esc(shape.text)}</text>`
   );
 }
 
@@ -61,7 +106,7 @@ function renderStroke(shape: Extract<Shape, { type: 'stroke' }>): string {
   }
   return (
     `<polyline points="${pts.join(' ')}" fill="none" stroke="${esc(shape.color)}" ` +
-    `stroke-width="${shape.strokeWidth}" stroke-linecap="round" stroke-linejoin="round" />`
+    `stroke-width="${shape.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"${opacityAttr(shape)} />`
   );
 }
 
@@ -163,8 +208,14 @@ function computeViewBox(shapes: Shape[], getShape: (id: string) => Shape | undef
   };
 }
 
-export function shapeGraphToSvg(graph: Record<string, Shape>): string {
-  const shapes = Object.values(graph);
+export function shapeGraphToSvg(
+  graph: Record<string, Shape>,
+  opts: { background?: string } = {},
+): string {
+  const background = opts.background ?? CANVAS_BG;
+  const shapes = Object.values(graph).sort(
+    (a, b) => (a.z ?? 0) - (b.z ?? 0) || a.createdAt - b.createdAt,
+  );
   const getShape = (id: string) => graph[id];
   const vb = computeViewBox(shapes, getShape);
 
@@ -174,8 +225,17 @@ export function shapeGraphToSvg(graph: Record<string, Shape>): string {
       case 'rect':
         body.push(renderRect(shape));
         break;
+      case 'diamond':
+        body.push(renderDiamond(shape));
+        break;
+      case 'line':
+        body.push(renderLine(shape));
+        break;
       case 'ellipse':
         body.push(renderEllipse(shape));
+        break;
+      case 'image':
+        body.push(renderImage(shape));
         break;
       case 'text':
         body.push(renderText(shape));
@@ -197,7 +257,9 @@ export function shapeGraphToSvg(graph: Record<string, Shape>): string {
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(vb.width)}" height="${Math.round(vb.height)}" ` +
     `viewBox="${vb.x} ${vb.y} ${vb.width} ${vb.height}">` +
-    `<rect x="${vb.x}" y="${vb.y}" width="${vb.width}" height="${vb.height}" fill="${CANVAS_BG}" />` +
+    (background === 'transparent'
+      ? ''
+      : `<rect x="${vb.x}" y="${vb.y}" width="${vb.width}" height="${vb.height}" fill="${background}" />`) +
     body.join('') +
     `</svg>`
   );

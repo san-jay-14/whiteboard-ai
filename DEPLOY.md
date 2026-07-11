@@ -48,8 +48,10 @@ board (`AGENT_BOARD_ID`) — treat it as a single-board / demo feature until
 multi-board watching is built.
 
 1. <https://railway.app> → **New Project → Deploy from GitHub repo** → this repo.
-2. Railway reads `railway.json` and builds `ai-agent/Dockerfile` from the repo
-   root (the agent imports `../../shared`, so the whole repo is the context).
+2. In the service **Settings → Root Directory = `ai-agent`**. The agent is
+   self-contained (its `shared/` deps are vendored under `ai-agent/src/shared`),
+   so Railway's default Node builder (Nixpacks) just runs `npm ci` + `npm start`
+   — no Dockerfile or repo-root context needed.
 3. **Variables:**
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`  *(secret)*
@@ -58,9 +60,6 @@ multi-board watching is built.
      the deployed app first, then copy its id)
 4. Deploy. Logs should show `channel status: SUBSCRIBED` and
    `AI agent present and watching.`
-
-Local image sanity check (optional):
-`docker build -f ai-agent/Dockerfile -t whiteboard-agent .`
 
 ## Environment variable reference
 

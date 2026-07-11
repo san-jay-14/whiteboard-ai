@@ -42,10 +42,10 @@ no custom API server for the app itself.
 
 ## 3. AI agent (Railway) — optional
 
-The agent is a persistent worker (holds a Realtime websocket + debounce
-timers), so it can't run on serverless functions. It currently watches **one**
-board (`AGENT_BOARD_ID`) — treat it as a single-board / demo feature until
-multi-board watching is built.
+The agent is a persistent worker (holds Realtime websockets + debounce
+timers), so it can't run on serverless functions. A single process **watches
+every board**: it queries the `boards` table on startup and rescans every 15s,
+opening a channel per board and joining new boards automatically.
 
 1. <https://railway.app> → **New Project → Deploy from GitHub repo** → this repo.
 2. In the service **Settings → Root Directory = `ai-agent`**. The agent is
@@ -56,10 +56,15 @@ multi-board watching is built.
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`  *(secret)*
    - `ANTHROPIC_API_KEY`          *(secret)*
-   - `AGENT_BOARD_ID`  — a real board id from your prod DB (create a board in
-     the deployed app first, then copy its id)
-4. Deploy. Logs should show `channel status: SUBSCRIBED` and
-   `AI agent present and watching.`
+   - (`AGENT_BOARD_ID` is no longer used — the agent watches all boards.)
+4. Deploy. Logs should show `supervisor started — watching N board(s)` and, per
+   board, `[<id>] present and watching`.
+
+> **Scaling note:** one process holds a Y.Doc + Realtime channel per board.
+> That's fine for modest numbers, but Supabase Realtime has per-client channel
+> limits and Anthropic billing scales with *active* boards (reasoning only runs
+> when a board is edited or "Ask AI" is pressed; a global cap of 3 concurrent
+> passes limits fan-out). Shard across processes if you outgrow one.
 
 ## Environment variable reference
 
@@ -70,15 +75,14 @@ multi-board watching is built.
 | `SUPABASE_URL`              | Railway        | no      | same Project URL                         |
 | `SUPABASE_SERVICE_ROLE_KEY` | Railway        | **yes** | Supabase → API → service_role secret     |
 | `ANTHROPIC_API_KEY`         | Railway        | **yes** | console.anthropic.com → API Keys         |
-| `AGENT_BOARD_ID`            | Railway        | no      | a board id in your prod DB               |
 
 ## Post-deploy smoke test
 
 1. Open the Vercel URL → you should reach the board list (anonymous session).
 2. Create a board, draw shapes, reload → shapes persist.
 3. Open the same board in a second browser → shapes + cursors sync live.
-4. (If the agent is deployed) open the `AGENT_BOARD_ID` board → the agent shows
-   in the presence list; "Ask AI" produces pending-review suggestions.
+4. (If the agent is deployed) open **any** board → the AI shows in the presence
+   list within ~15s; "Ask AI" produces pending-review suggestions.
 
 ## Before a public launch
 

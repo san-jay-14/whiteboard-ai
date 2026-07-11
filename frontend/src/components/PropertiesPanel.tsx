@@ -19,9 +19,12 @@ type Props = {
   showFont: boolean;
   stickyMode: boolean;
   hasSelection: boolean;
+  selectionCount: number;
   onDuplicate: () => void;
   onDelete: () => void;
   onLayer: (action: 'back' | 'backward' | 'forward' | 'front') => void;
+  onAlign: (action: 'left' | 'center-h' | 'right' | 'top' | 'middle-v' | 'bottom') => void;
+  onDistribute: (axis: 'h' | 'v') => void;
 };
 
 function Section({ label, children }: { label: string; children: ReactNode }) {
@@ -126,9 +129,12 @@ export default function PropertiesPanel({
   showFont,
   stickyMode,
   hasSelection,
+  selectionCount,
   onDuplicate,
   onDelete,
   onLayer,
+  onAlign,
+  onDistribute,
 }: Props) {
   return (
     <div className="absolute left-4 top-20 z-10 flex w-56 flex-col gap-3.5 rounded-xl bg-white p-3 shadow-lg ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10">
@@ -239,6 +245,26 @@ export default function PropertiesPanel({
         />
       </Section>
 
+      {selectionCount >= 2 && (
+        <Section label="Align">
+          <div className="flex flex-wrap items-center gap-1">
+            <AlignButton label="Align left" onClick={() => onAlign('left')} lines={[[4, 4, 4, 20]]} bars={[[7, 6, 8, 4], [7, 14, 12, 4]]} />
+            <AlignButton label="Align center" onClick={() => onAlign('center-h')} lines={[[12, 4, 12, 20]]} bars={[[8, 6, 8, 4], [6, 14, 12, 4]]} />
+            <AlignButton label="Align right" onClick={() => onAlign('right')} lines={[[20, 4, 20, 20]]} bars={[[13, 6, 8, 4], [9, 14, 12, 4]]} />
+            <AlignButton label="Align top" onClick={() => onAlign('top')} lines={[[4, 4, 20, 4]]} bars={[[6, 7, 4, 8], [14, 7, 4, 12]]} />
+            <AlignButton label="Align middle" onClick={() => onAlign('middle-v')} lines={[[4, 12, 20, 12]]} bars={[[6, 8, 4, 8], [14, 6, 4, 12]]} />
+            <AlignButton label="Align bottom" onClick={() => onAlign('bottom')} lines={[[4, 20, 20, 20]]} bars={[[6, 13, 4, 8], [14, 9, 4, 12]]} />
+            {selectionCount >= 3 && (
+              <>
+                <span className="mx-0.5 h-5 w-px bg-neutral-200 dark:bg-neutral-600" />
+                <AlignButton label="Distribute horizontally" onClick={() => onDistribute('h')} lines={[]} bars={[[4, 8, 3, 8], [11, 8, 3, 8], [18, 8, 3, 8]]} />
+                <AlignButton label="Distribute vertically" onClick={() => onDistribute('v')} lines={[]} bars={[[8, 4, 8, 3], [8, 11, 8, 3], [8, 18, 8, 3]]} />
+              </>
+            )}
+          </div>
+        </Section>
+      )}
+
       {hasSelection && (
         <>
           <Section label="Layers">
@@ -269,6 +295,37 @@ function AlignIcon({ dir }: { dir: 'left' | 'center' | 'right' }) {
       <path d={`M${x} 12h${dir === 'center' ? 10 : 10}`} />
       <path d="M4 18h16" />
     </svg>
+  );
+}
+
+function AlignButton({
+  label,
+  onClick,
+  lines,
+  bars,
+}: {
+  label: string;
+  onClick: () => void;
+  lines: number[][];
+  bars: number[][];
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className="flex h-8 w-8 items-center justify-center rounded-md text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-700"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24">
+        {lines.map((l, i) => (
+          <line key={`l${i}`} x1={l[0]} y1={l[1]} x2={l[2]} y2={l[3]} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        ))}
+        {bars.map((b, i) => (
+          <rect key={`b${i}`} x={b[0]} y={b[1]} width={b[2]} height={b[3]} rx="1" fill="currentColor" />
+        ))}
+      </svg>
+    </button>
   );
 }
 

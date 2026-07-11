@@ -14,7 +14,7 @@ export type TextAlign = 'left' | 'center' | 'right';
 
 export type ShapeBase = {
   id: string;
-  type: 'rect' | 'ellipse' | 'diamond' | 'arrow' | 'line' | 'text' | 'stroke' | 'sticky';
+  type: 'rect' | 'ellipse' | 'diamond' | 'arrow' | 'line' | 'text' | 'stroke' | 'sticky' | 'image';
   x: number;
   y: number;
   origin: 'user' | 'ai';
@@ -39,6 +39,7 @@ export type LineShape = ShapeBase & { type: 'line'; points: number[]; strokeWidt
 export type TextShape = ShapeBase & { type: 'text'; text: string; fontSize: number; color?: string };
 export type StrokeShape = ShapeBase & { type: 'stroke'; points: number[]; strokeWidth: number; color: string };
 export type StickyShape = ShapeBase & { type: 'sticky'; text: string; color: string; width: number; height: number };
+export type ImageShape = ShapeBase & { type: 'image'; src: string; width: number; height: number };
 
 export type Shape =
   | RectShape
@@ -48,7 +49,8 @@ export type Shape =
   | LineShape
   | TextShape
   | StrokeShape
-  | StickyShape;
+  | StickyShape
+  | ImageShape;
 
 // board_snapshots.shape_graph shape: keyed by shape.id.
 export type ShapeGraph = Record<string, Shape>;

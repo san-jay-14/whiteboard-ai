@@ -26,7 +26,7 @@ export type TextAlign = 'left' | 'center' | 'right';
 
 export type ShapeBase = {
   id: string;
-  type: 'rect' | 'ellipse' | 'diamond' | 'arrow' | 'line' | 'text' | 'stroke' | 'sticky';
+  type: 'rect' | 'ellipse' | 'diamond' | 'arrow' | 'line' | 'text' | 'stroke' | 'sticky' | 'image';
   x: number;
   y: number;
   origin: 'user' | 'ai';
@@ -58,6 +58,9 @@ export type StrokeShape = ShapeBase & { type: 'stroke'; points: number[]; stroke
 // 6) needs persisted dimensions instead of the old fixed STICKY_SIZE
 // constant. Always set by createSticky; no optional/fallback branches needed.
 export type StickyShape = ShapeBase & { type: 'sticky'; text: string; color: string; width: number; height: number };
+// src is a data: URL (self-contained so snapshots/exports need no external
+// fetch). width/height are the on-canvas display size.
+export type ImageShape = ShapeBase & { type: 'image'; src: string; width: number; height: number };
 
 export type Shape =
   | RectShape
@@ -67,4 +70,5 @@ export type Shape =
   | LineShape
   | TextShape
   | StrokeShape
-  | StickyShape;
+  | StickyShape
+  | ImageShape;

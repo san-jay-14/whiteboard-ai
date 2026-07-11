@@ -21,5 +21,9 @@ export const TOOL_SHORTCUTS: Record<string, Tool> = {
   '7': 'pen',
   t: 'text',
   '8': 'text',
+  i: 'image',
+  '9': 'image',
   s: 'sticky',
+  e: 'eraser',
+  '0': 'eraser',
 };

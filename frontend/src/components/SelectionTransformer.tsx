@@ -58,7 +58,7 @@ export default function SelectionTransformer({ doc, shapesMap, shapeIds, nodeRef
         node.scaleX(1);
         node.scaleY(1);
 
-        if (shape.type === 'rect' || shape.type === 'diamond') {
+        if (shape.type === 'rect' || shape.type === 'diamond' || shape.type === 'image') {
           shapesMap.set(id, {
             ...shape,
             x,

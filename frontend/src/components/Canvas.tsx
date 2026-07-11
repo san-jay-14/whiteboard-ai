@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Arrow, Circle, Ellipse, Layer, Line, Rect, Stage } from 'react-konva';
 import type Konva from 'konva';
+import * as Y from 'yjs';
 import { useBoardSession } from '../lib/BoardSessionContext';
 import { useShapes } from '../hooks/useShapes';
 import { useAwareness } from '../hooks/useAwareness';
@@ -10,6 +11,7 @@ import {
   createArrow,
   createDiamond,
   createEllipse,
+  createImage,
   createLine,
   createRect,
   createSticky,
@@ -32,13 +34,21 @@ import {
 import { useTheme } from '../lib/theme';
 import { deleteShapesCascading } from '../lib/deleteShapes';
 import { acceptShape, rejectShape } from '../lib/reviewActions';
-import { getRotatedAABB, getShapeAnchors, nearestAnchor, rectsIntersect, type Anchor } from '../lib/geometry';
+import {
+  getArrowEndpoints,
+  getRotatedAABB,
+  getShapeAnchors,
+  nearestAnchor,
+  rectsIntersect,
+  type Anchor,
+} from '../lib/geometry';
 import { STICKY_DEFAULT_SIZE } from '../lib/constants';
 import {
   ZOOM_STEP,
   fitBoundsToViewport,
   loadViewport,
   saveViewport,
+  screenToWorld,
   worldToScreen,
   zoomAt,
   zoomToCenter,
@@ -56,6 +66,11 @@ import ShareControl from './ShareControl';
 import PropertiesPanel from './PropertiesPanel';
 import TextEditor from './TextEditor';
 import ZoomControls from './ZoomControls';
+import Menu from './Menu';
+import LibraryPanel from './LibraryPanel';
+import { copyPngToClipboard, downloadPng, downloadSvg } from '../lib/exportImage';
+import { addToLibrary, instantiateLibraryItem, type LibraryItem } from '../lib/library';
+import { showErrorToast } from '../lib/toast';
 import Toolbar, { type Tool } from './Toolbar';
 import { TOOL_SHORTCUTS } from '../lib/tools';
 
@@ -84,7 +99,19 @@ type ArrowDraft = {
 
 const MIN_DRAG = 3;
 const CURSOR_THROTTLE_MS = 50;
-const TRANSFORMABLE_TYPES = new Set<Shape['type']>(['rect', 'ellipse', 'diamond', 'sticky']);
+const TRANSFORMABLE_TYPES = new Set<Shape['type']>(['rect', 'ellipse', 'diamond', 'sticky', 'image']);
+
+// Shortest distance from a point to a line segment (for erasing/targeting
+// arrows, which have no fillable area).
+function distToSegment(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
 
 export default function Canvas({ ownerId, uid, onBack }: Props) {
   const { boardId, doc, shapesMap, awareness, boardSync } = useBoardSession();
@@ -99,6 +126,8 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
   // started plus the viewport at that moment, so each move is an absolute
   // offset rather than an accumulating delta.
   const panStart = useRef<{ screen: ViewportPoint; viewport: Viewport } | null>(null);
+  const erasingRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const shapeNodeRefs = useRef(new Map<string, Konva.Node>());
   // Tracks which shape's drag gesture is the one the user actually grabbed,
   // as opposed to a sibling Konva's Transformer is proxy-dragging alongside
@@ -124,10 +153,34 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
   // Style actually applied to new shapes: the default black/white stroke
   // follows the theme so shapes stay visible on the dark canvas.
   const drawStyle = themedStyle(itemStyle, theme === 'dark');
+
+  // Undo/redo scoped to local edits only: local shapesMap writes carry a
+  // null transaction origin (tracked by default), while remote/AI updates
+  // carry REMOTE_ORIGIN (see realtimeSync.ts) and are ignored. The manager is
+  // created inside the effect (not useMemo) so StrictMode's mount→unmount→
+  // mount cycle can't leave a destroyed instance behind.
+  const undoRef = useRef<Y.UndoManager | null>(null);
+  const [undoState, setUndoState] = useState({ canUndo: false, canRedo: false });
+  useEffect(() => {
+    const um = new Y.UndoManager(shapesMap, { captureTimeout: 250 });
+    undoRef.current = um;
+    const update = () => setUndoState({ canUndo: um.undoStack.length > 0, canRedo: um.redoStack.length > 0 });
+    um.on('stack-item-added', update);
+    um.on('stack-item-popped', update);
+    update();
+    return () => {
+      um.off('stack-item-added', update);
+      um.off('stack-item-popped', update);
+      um.destroy();
+      undoRef.current = null;
+    };
+  }, [shapesMap]);
   // Space held = temporary pan mode (grab cursor, shapes non-draggable);
   // panning = a pan drag is in progress (grabbing cursor).
   const [isSpaceDown, setIsSpaceDown] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
+  // Optional per-board canvas background override ('' = follow the theme).
+  const [canvasBg, setCanvasBg] = useState<string>(() => localStorage.getItem(`wb:canvasbg:${boardId}`) ?? '');
 
   const presentClientIDs = useMemo(
     () => new Set(presencePeers.map((peer) => peer.awarenessClientID)),
@@ -197,6 +250,17 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
       const target = e.target as HTMLElement | null;
       // Typing in any inline editor (sticky/text) — not a canvas shortcut.
       if (editingStickyId || (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'))) return;
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) undoRef.current?.redo();
+        else undoRef.current?.undo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        undoRef.current?.redo();
+        return;
+      }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size > 0) {
         e.preventDefault();
         deleteShapesCascading(doc, shapesMap, Array.from(selectedIds));
@@ -255,16 +319,45 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
     return null;
   }
 
+  // Topmost shape whose geometry contains a world point. Geometric (not
+  // Konva getIntersection) so it's zoom-safe and hits a shape's whole area —
+  // matching Excalidraw's generous eraser and connector targeting. `shapes`
+  // is sorted ascending by z, so iterate in reverse for topmost-first.
+  function shapeAtWorldPoint(p: Point, excludeArrows = false): string | null {
+    for (let i = shapes.length - 1; i >= 0; i--) {
+      const s = shapes[i];
+      if (s.type === 'arrow') {
+        if (excludeArrows) continue;
+        const ep = getArrowEndpoints(s, (id) => shapesMap.get(id));
+        if (ep && distToSegment(p, ep.from, ep.to) <= 8) return s.id;
+        continue;
+      }
+      const b = getRotatedAABB(s);
+      if (p.x >= b.x && p.x <= b.x + b.width && p.y >= b.y && p.y <= b.y + b.height) return s.id;
+    }
+    return null;
+  }
+
   function findAttachableShapeIdUnderCursor(exclude: Set<string>): string | null {
-    const stage = stageRef.current;
     const pos = pointerPos();
-    if (!stage || !pos) return null;
-    const node = stage.getIntersection(pos);
-    const id = resolveShapeId(node);
+    if (!pos) return null;
+    const id = shapeAtWorldPoint(pos, true); // arrows can't attach to arrows
     if (!id || exclude.has(id)) return null;
-    const shape = shapesMap.get(id);
-    if (!shape || shape.type === 'arrow') return null; // arrows can't attach to arrows
     return id;
+  }
+
+  function eraseUnderCursor() {
+    const pos = pointerPos();
+    if (!pos) return;
+    const id = shapeAtWorldPoint(pos);
+    if (!id || !shapesMap.has(id)) return;
+    deleteShapesCascading(doc, shapesMap, [id]);
+    setSelectedIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   }
 
   // Commit a freshly-drawn shape, then select it and return to the select
@@ -273,6 +366,29 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
     shapesMap.set(shape.id, shape);
     setSelectedIds(new Set([shape.id]));
     setTool('select');
+  }
+
+  // Reads an image file, scales it to a sane on-canvas size, and drops it at
+  // the given world point (default: viewport centre). Used by the image tool,
+  // paste, and drag-and-drop.
+  function placeImageFromFile(file: File, worldPoint?: { x: number; y: number }) {
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = reader.result as string;
+      const probe = new window.Image();
+      probe.onload = () => {
+        const MAX_DIM = 400;
+        const scale = Math.min(1, MAX_DIM / Math.max(probe.width, probe.height));
+        const w = Math.round(probe.width * scale);
+        const h = Math.round(probe.height * scale);
+        const center =
+          worldPoint ?? screenToWorld(viewport, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
+        placeShape(createImage(center.x - w / 2, center.y - h / 2, src, w, h));
+      };
+      probe.src = src;
+    };
+    reader.readAsDataURL(file);
   }
 
   // ── Properties-panel wiring ──────────────────────────────────────────
@@ -326,6 +442,49 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
     });
   }
 
+  type AlignAction = 'left' | 'center-h' | 'right' | 'top' | 'middle-v' | 'bottom';
+  function alignSelection(action: AlignAction) {
+    const items = selectedShapes.filter((s) => s.type !== 'arrow').map((s) => ({ s, b: getRotatedAABB(s) }));
+    if (items.length < 2) return;
+    const minX = Math.min(...items.map((o) => o.b.x));
+    const maxX = Math.max(...items.map((o) => o.b.x + o.b.width));
+    const minY = Math.min(...items.map((o) => o.b.y));
+    const maxY = Math.max(...items.map((o) => o.b.y + o.b.height));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    doc.transact(() => {
+      for (const { s, b } of items) {
+        let dx = 0;
+        let dy = 0;
+        if (action === 'left') dx = minX - b.x;
+        else if (action === 'right') dx = maxX - (b.x + b.width);
+        else if (action === 'center-h') dx = cx - (b.x + b.width / 2);
+        else if (action === 'top') dy = minY - b.y;
+        else if (action === 'bottom') dy = maxY - (b.y + b.height);
+        else if (action === 'middle-v') dy = cy - (b.y + b.height / 2);
+        if (dx || dy) shapesMap.set(s.id, { ...s, x: s.x + dx, y: s.y + dy });
+      }
+    });
+  }
+
+  function distributeSelection(axis: 'h' | 'v') {
+    const items = selectedShapes.filter((s) => s.type !== 'arrow').map((s) => ({ s, b: getRotatedAABB(s) }));
+    if (items.length < 3) return;
+    const center = (o: { b: { x: number; y: number; width: number; height: number } }) =>
+      axis === 'h' ? o.b.x + o.b.width / 2 : o.b.y + o.b.height / 2;
+    items.sort((a, b) => center(a) - center(b));
+    const first = center(items[0]);
+    const step = (center(items[items.length - 1]) - first) / (items.length - 1);
+    doc.transact(() => {
+      items.forEach((o, i) => {
+        if (i === 0 || i === items.length - 1) return;
+        const d = first + step * i - center(o);
+        if (axis === 'h') shapesMap.set(o.s.id, { ...o.s, x: o.s.x + d });
+        else shapesMap.set(o.s.id, { ...o.s, y: o.s.y + d });
+      });
+    });
+  }
+
   function duplicateSelection() {
     if (!selectedShapes.length) return;
     const clones = selectedShapes.map((s) => ({
@@ -367,6 +526,12 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
         panStart.current = { screen, viewport };
         setIsPanning(true);
       }
+      return;
+    }
+
+    if (tool === 'eraser') {
+      erasingRef.current = true;
+      eraseUnderCursor();
       return;
     }
 
@@ -424,6 +589,10 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
 
     const pos = pointerPos();
     updateCursorAwareness(pos);
+    if (erasingRef.current) {
+      eraseUnderCursor();
+      return;
+    }
     if (!pos) return;
 
     if (draft) {
@@ -466,6 +635,11 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
     if (panStart.current) {
       panStart.current = null;
       setIsPanning(false);
+      return;
+    }
+
+    if (erasingRef.current) {
+      erasingRef.current = false;
       return;
     }
 
@@ -572,6 +746,47 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
     );
   }
 
+  // Effective background used for exports: the per-board override, else the
+  // theme's canvas colour.
+  const exportBg = canvasBg || (theme === 'dark' ? '#121212' : '#ffffff');
+
+  useEffect(() => {
+    if (canvasBg) localStorage.setItem(`wb:canvasbg:${boardId}`, canvasBg);
+    else localStorage.removeItem(`wb:canvasbg:${boardId}`);
+  }, [boardId, canvasBg]);
+
+  async function handleExportPng() {
+    try {
+      await downloadPng(shapes, exportBg);
+    } catch (e) {
+      showErrorToast(`Couldn't export PNG: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  function handleExportSvg() {
+    downloadSvg(shapes, exportBg);
+  }
+  async function handleCopyPng() {
+    try {
+      await copyPngToClipboard(shapes, exportBg);
+    } catch (e) {
+      showErrorToast(`Couldn't copy image: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  function handleResetCanvas() {
+    if (shapes.length > 0 && !window.confirm('Clear the entire canvas? This cannot be undone by peers.')) return;
+    doc.transact(() => shapesMap.clear());
+    setSelectedIds(new Set());
+  }
+
+  function insertLibraryItem(item: LibraryItem) {
+    const origin = screenToWorld(viewport, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    const newShapes = instantiateLibraryItem(item, origin);
+    if (newShapes.length === 0) return;
+    doc.transact(() => newShapes.forEach((s) => shapesMap.set(s.id, s)));
+    setSelectedIds(new Set(newShapes.map((s) => s.id)));
+    setTool('select');
+  }
+
   // Latest zoom handlers behind a ref so the keyboard-shortcut effect can
   // stay subscribed once while always calling the current closures (which
   // read live `shapes` for zoom-to-fit).
@@ -588,6 +803,36 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
   useEffect(() => {
     saveItemStyle(itemStyle);
   }, [itemStyle]);
+
+  // Selecting the image tool opens the file picker, then reverts to select so
+  // it doesn't re-fire. The actual insert happens in the input's onChange.
+  useEffect(() => {
+    if (tool === 'image') {
+      fileInputRef.current?.click();
+      setTool('select');
+    }
+  }, [tool]);
+
+  // Paste an image from the clipboard anywhere on the board.
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            placeImageFromFile(file);
+            e.preventDefault();
+          }
+          return;
+        }
+      }
+    }
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewport]);
 
   // Space-to-pan + zoom keyboard shortcuts. Ignored while editing text or
   // typing into a form field.
@@ -745,18 +990,36 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
         : 'default';
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden" style={{ cursor, backgroundColor: 'var(--canvas-bg)' }}>
-      <button
-        type="button"
-        onClick={onBack}
-        title="Back to boards"
-        className="absolute left-4 top-4 z-10 flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-medium text-neutral-600 shadow-md transition-colors hover:bg-neutral-100 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M15 18l-6-6 6-6" />
-        </svg>
-        Boards
-      </button>
+    <div
+      className="relative h-screen w-screen overflow-hidden"
+      style={{ cursor, backgroundColor: canvasBg || 'var(--canvas-bg)' }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        const file = e.dataTransfer.files?.[0];
+        if (file) placeImageFromFile(file, screenToWorld(viewport, { x: e.clientX, y: e.clientY }));
+      }}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) placeImageFromFile(f);
+          e.target.value = '';
+        }}
+      />
+      <Menu
+        onBack={onBack}
+        onExportPng={handleExportPng}
+        onExportSvg={handleExportSvg}
+        onCopyPng={handleCopyPng}
+        onResetCanvas={handleResetCanvas}
+        canvasBg={canvasBg}
+        onCanvasBg={setCanvasBg}
+      />
       <Toolbar tool={tool} onChange={setTool} onAskAi={boardSync.requestAiReview} />
       {showPanel && (
         <PropertiesPanel
@@ -769,11 +1032,19 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
           showFont={contextKinds.has('text')}
           stickyMode={stickyMode}
           hasSelection={selectedShapes.length > 0}
+          selectionCount={selectedShapes.length}
           onDuplicate={duplicateSelection}
           onDelete={deleteSelection}
           onLayer={changeLayer}
+          onAlign={alignSelection}
+          onDistribute={distributeSelection}
         />
       )}
+      <LibraryPanel
+        onInsert={insertLibraryItem}
+        onSaveSelection={() => addToLibrary(selectedShapes)}
+        canSave={selectedShapes.length > 0}
+      />
       <PeerList peers={presencePeers} localAwarenessClientID={awareness.clientID} />
       {uid === ownerId && <ShareControl boardId={boardId} />}
       <ZoomControls
@@ -782,6 +1053,10 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
         onZoomOut={zoomOut}
         onReset={resetZoom}
         onZoomToFit={zoomToFit}
+        canUndo={undoState.canUndo}
+        canRedo={undoState.canRedo}
+        onUndo={() => undoRef.current?.undo()}
+        onRedo={() => undoRef.current?.redo()}
       />
       {connectionStatus === 'reconnecting' && (
         <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-lg bg-amber-500 px-4 py-1.5 text-sm font-medium text-white shadow-md">

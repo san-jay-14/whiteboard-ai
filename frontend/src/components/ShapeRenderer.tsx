@@ -1,4 +1,5 @@
-import { Arrow, Ellipse, Group, Label, Line, Rect, Tag, Text } from 'react-konva';
+import { useEffect, useState, type ComponentProps } from 'react';
+import { Arrow, Ellipse, Group, Image as KonvaImage, Label, Line, Rect, Tag, Text } from 'react-konva';
 import type Konva from 'konva';
 import type * as Y from 'yjs';
 import { getArrowEndpoints, getShapeBounds } from '../lib/geometry';
@@ -49,6 +50,56 @@ function AiBadge({ x, y }: { x: number; y: number }) {
       <Tag fill={AI_COLOR} cornerRadius={3} />
       <Text text="AI" fontSize={10} fontStyle="bold" fill="#ffffff" padding={3} />
     </Label>
+  );
+}
+
+// Loads an HTMLImageElement from a (data) URL for Konva to draw. Returns
+// undefined until the image has decoded.
+function useHtmlImage(src: string): HTMLImageElement | undefined {
+  const [img, setImg] = useState<HTMLImageElement | undefined>();
+  useEffect(() => {
+    const image = new window.Image();
+    const onLoad = () => setImg(image);
+    image.addEventListener('load', onLoad);
+    image.src = src;
+    return () => image.removeEventListener('load', onLoad);
+  }, [src]);
+  return img;
+}
+
+// Image shapes need a hook (image loading), so they can't render inline in the
+// switch below — extracted into their own component.
+function ImageShapeView({
+  shape,
+  selected,
+  pending,
+  registerNode,
+  nodeProps,
+}: {
+  shape: Extract<Shape, { type: 'image' }>;
+  selected: boolean;
+  pending: boolean;
+  registerNode?: (node: Konva.Node | null) => void;
+  nodeProps: Partial<ComponentProps<typeof KonvaImage>>;
+}) {
+  const img = useHtmlImage(shape.src);
+  return (
+    <>
+      <KonvaImage
+        ref={registerNode}
+        x={shape.x}
+        y={shape.y}
+        width={shape.width}
+        height={shape.height}
+        rotation={shape.rotation ?? 0}
+        image={img}
+        stroke={selected ? SELECTED_STROKE : pending ? AI_COLOR : undefined}
+        strokeWidth={selected || pending ? 2 : 0}
+        dash={selected || pending ? PENDING_DASH : undefined}
+        {...nodeProps}
+      />
+      {pending && <AiBadge x={shape.x} y={shape.y - 18} />}
+    </>
   );
 }
 
@@ -252,6 +303,16 @@ export default function ShapeRenderer({
           )}
           {pending && <AiBadge x={-4} y={-18} />}
         </Group>
+      );
+    case 'image':
+      return (
+        <ImageShapeView
+          shape={shape}
+          selected={selected}
+          pending={pending}
+          registerNode={registerNode}
+          nodeProps={handlers}
+        />
       );
     case 'arrow': {
       const endpoints = getArrowEndpoints(shape, (id) => shapesMap.get(id));

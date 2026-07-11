@@ -11,7 +11,9 @@ export type Tool =
   | 'line'
   | 'pen'
   | 'text'
-  | 'sticky';
+  | 'image'
+  | 'sticky'
+  | 'eraser';
 
 // Shared stroke-icon wrapper — 20px, currentColor so active/inactive theming
 // is just a text-color swap.
@@ -77,6 +79,18 @@ const ICONS: Record<Tool, ReactNode> = {
       <path d="M14 19v-5h5" />
     </Icon>
   ),
+  image: (
+    <Icon>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="9.5" r="1.5" />
+      <path d="M21 16l-5-5-9 9" />
+    </Icon>
+  ),
+  eraser: (
+    <Icon>
+      <path d="M7 21h10M5 13l6-6 7 7-5 5H9l-4-4z" />
+    </Icon>
+  ),
 };
 
 // Tool ordering + keyboard shortcuts, matching Excalidraw where possible.
@@ -90,7 +104,9 @@ const TOOLS: { id: Tool; label: string; badge?: string }[] = [
   { id: 'line', label: 'Line (L or 6)', badge: '6' },
   { id: 'pen', label: 'Draw (P or 7)', badge: '7' },
   { id: 'text', label: 'Text (T or 8)', badge: '8' },
+  { id: 'image', label: 'Insert image (9)', badge: '9' },
   { id: 'sticky', label: 'Sticky note (S)' },
+  { id: 'eraser', label: 'Eraser (E or 0)', badge: '0' },
 ];
 
 type Props = {

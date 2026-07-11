@@ -77,6 +77,13 @@ function renderEllipse(shape: Extract<Shape, { type: 'ellipse' }>): string {
   );
 }
 
+function renderImage(shape: Extract<Shape, { type: 'image' }>): string {
+  return (
+    `<image href="${esc(shape.src)}" x="${shape.x}" y="${shape.y}" ` +
+    `width="${shape.width}" height="${shape.height}"${opacityAttr(shape)}${rotateAttr(shape)} />`
+  );
+}
+
 function renderLine(shape: Extract<Shape, { type: 'line' }>): string {
   const pts: string[] = [];
   for (let i = 0; i + 1 < shape.points.length; i += 2) {
@@ -232,6 +239,9 @@ export function shapeGraphToSvg(graph: ShapeGraph): string {
         break;
       case 'ellipse':
         body.push(renderEllipse(shape));
+        break;
+      case 'image':
+        body.push(renderImage(shape));
         break;
       case 'text':
         body.push(renderText(shape));

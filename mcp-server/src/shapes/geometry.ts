@@ -26,6 +26,7 @@ export function getShapeBounds(shape: Shape): Bounds {
   switch (shape.type) {
     case 'rect':
     case 'diamond':
+    case 'image':
       return { x: shape.x, y: shape.y, width: shape.width, height: shape.height };
     case 'ellipse':
       return {

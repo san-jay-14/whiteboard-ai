@@ -5,6 +5,7 @@ import type {
   ArrowShape,
   DiamondShape,
   EllipseShape,
+  ImageShape,
   LineShape,
   RectShape,
   Shape,
@@ -141,6 +142,10 @@ export function createLine(
     color: style.strokeColor,
     ...outlineStyle(style),
   };
+}
+
+export function createImage(x: number, y: number, src: string, width: number, height: number): ImageShape {
+  return { ...base(x, y), type: 'image', src, width, height };
 }
 
 export function createSticky(x: number, y: number): StickyShape {

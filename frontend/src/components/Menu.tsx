@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { toggleTheme, useTheme } from '../lib/theme';
+import ShareControl from './ShareControl';
 
 type Props = {
   onBack: () => void;
@@ -9,6 +10,8 @@ type Props = {
   onResetCanvas: () => void;
   canvasBg: string; // '' = follow theme
   onCanvasBg: (bg: string) => void;
+  boardId: string;
+  canInvite: boolean; // current user owns the board
 };
 
 // Canvas background presets (Excalidraw-style). '' means "follow the theme".
@@ -50,6 +53,8 @@ export default function Menu({
   onResetCanvas,
   canvasBg,
   onCanvasBg,
+  boardId,
+  canInvite,
 }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -93,6 +98,12 @@ export default function Menu({
       {open && (
         <div className="mt-2 w-60 rounded-xl bg-white p-1.5 shadow-lg ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10">
           <Item icon={<I d="M15 18l-6-6 6-6" />} label="Back to boards" onClick={close(onBack)} />
+          {canInvite && (
+            <>
+              <div className="my-1 h-px bg-neutral-200 dark:bg-neutral-700" />
+              <ShareControl boardId={boardId} />
+            </>
+          )}
           <div className="my-1 h-px bg-neutral-200 dark:bg-neutral-700" />
           <Item icon={<I d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 10l5 5 5-5M12 15V3" />} label="Export as PNG" onClick={close(onExportPng)} />
           <Item icon={<I d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 10l5 5 5-5M12 15V3" />} label="Export as SVG" onClick={close(onExportSvg)} />

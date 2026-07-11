@@ -4,6 +4,7 @@ import type Konva from 'konva';
 import type * as Y from 'yjs';
 import { getArrowEndpoints, getShapeBounds } from '../lib/geometry';
 import { FONT_FAMILY_CSS } from '../lib/itemStyle';
+import { adjustColorForTheme } from '../lib/themeColor';
 import type { Shape, StrokeStyle } from '../lib/types';
 
 const SELECTED_STROKE = '#6965db'; // Excalidraw selection violet
@@ -25,6 +26,8 @@ type Props = {
   onDragStart?: () => void;
   onDragEnd?: (e: Konva.KonvaEventObject<DragEvent>) => void;
   hideText?: boolean;
+  // Dark theme active — drives display-time stroke/text contrast adjustment.
+  dark?: boolean;
   // Only used for rect/ellipse/diamond/sticky — lets Canvas attach a Transformer.
   registerNode?: (node: Konva.Node | null) => void;
   // step 11: drives the reviewReason tooltip in Canvas. Only meaningful for
@@ -115,10 +118,14 @@ export default function ShapeRenderer({
   onDragStart,
   onDragEnd,
   hideText,
+  dark = false,
   registerNode,
   onHoverChange,
 }: Props) {
   const pending = shape.pendingReview ?? false;
+  // A shape's own stroke/text colour, adjusted for the active theme so it
+  // stays visible (grayscale-only; hues are preserved).
+  const themed = (color: string) => adjustColorForTheme(color, dark);
 
   const commitMove = (x: number, y: number) => {
     shapesMap.set(shape.id, { ...shape, x, y });
@@ -163,7 +170,7 @@ export default function ShapeRenderer({
             rotation={shape.rotation ?? 0}
             cornerRadius={shape.edges === 'round' ? CORNER_RADIUS : 0}
             fill={shape.fill}
-            stroke={outlineStroke(shape.stroke)}
+            stroke={outlineStroke(themed(shape.stroke))}
             strokeWidth={strokeWidth}
             dash={dash}
             {...handlers}
@@ -187,7 +194,7 @@ export default function ShapeRenderer({
             rotation={shape.rotation ?? 0}
             lineJoin={shape.edges === 'round' ? 'round' : 'miter'}
             fill={shape.fill}
-            stroke={outlineStroke(shape.stroke)}
+            stroke={outlineStroke(themed(shape.stroke))}
             strokeWidth={strokeWidth}
             dash={dash}
             {...handlers}
@@ -208,7 +215,7 @@ export default function ShapeRenderer({
             radiusY={shape.radiusY}
             rotation={shape.rotation ?? 0}
             fill={shape.fill}
-            stroke={outlineStroke(shape.stroke)}
+            stroke={outlineStroke(themed(shape.stroke))}
             strokeWidth={strokeWidth}
             dash={dash}
             {...handlers}
@@ -242,7 +249,7 @@ export default function ShapeRenderer({
               fontSize={shape.fontSize}
               fontFamily={FONT_FAMILY_CSS[shape.fontFamily ?? 'hand']}
               align={shape.textAlign ?? 'left'}
-              fill={selected ? SELECTED_STROKE : shape.color ?? '#1e1e1e'}
+              fill={selected ? SELECTED_STROKE : themed(shape.color ?? '#1e1e1e')}
             />
           )}
           {pending && <AiBadge x={-4} y={-18} />}
@@ -256,7 +263,7 @@ export default function ShapeRenderer({
             x={shape.x}
             y={shape.y}
             points={shape.points}
-            stroke={outlineStroke(shape.color)}
+            stroke={outlineStroke(themed(shape.color))}
             strokeWidth={selected ? shape.strokeWidth + 2 : shape.strokeWidth}
             dash={dash}
             hitStrokeWidth={Math.max(shape.strokeWidth, 16)}
@@ -274,7 +281,7 @@ export default function ShapeRenderer({
             x={shape.x}
             y={shape.y}
             points={shape.points}
-            stroke={outlineStroke(shape.color)}
+            stroke={outlineStroke(themed(shape.color))}
             strokeWidth={strokeWidth}
             dash={dash}
             hitStrokeWidth={Math.max(shape.strokeWidth, 16)}
@@ -326,8 +333,8 @@ export default function ShapeRenderer({
             x={0}
             y={0}
             points={[from.x, from.y, to.x, to.y]}
-            stroke={outlineStroke('#1e1e1e')}
-            fill={outlineStroke('#1e1e1e')}
+            stroke={outlineStroke(themed('#1e1e1e'))}
+            fill={outlineStroke(themed('#1e1e1e'))}
             strokeWidth={selected ? baseWidth + 2 : baseWidth}
             dash={dash}
             opacity={(shape.opacity ?? 100) / 100}

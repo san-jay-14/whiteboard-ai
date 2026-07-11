@@ -32,6 +32,7 @@ import {
   type ItemStyle,
 } from '../lib/itemStyle';
 import { useTheme } from '../lib/theme';
+import { adjustColorForTheme } from '../lib/themeColor';
 import { deleteShapesCascading } from '../lib/deleteShapes';
 import { acceptShape, rejectShape } from '../lib/reviewActions';
 import {
@@ -62,7 +63,6 @@ import CursorLayer from './CursorLayer';
 import PeerList from './PeerList';
 import PendingReviewControls from './PendingReviewControls';
 import ReviewTooltip from './ReviewTooltip';
-import ShareControl from './ShareControl';
 import PropertiesPanel from './PropertiesPanel';
 import TextEditor from './TextEditor';
 import ZoomControls from './ZoomControls';
@@ -1019,6 +1019,8 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
         onResetCanvas={handleResetCanvas}
         canvasBg={canvasBg}
         onCanvasBg={setCanvasBg}
+        boardId={boardId}
+        canInvite={uid === ownerId}
       />
       <Toolbar tool={tool} onChange={setTool} onAskAi={boardSync.requestAiReview} />
       {showPanel && (
@@ -1046,7 +1048,6 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
         canSave={selectedShapes.length > 0}
       />
       <PeerList peers={presencePeers} localAwarenessClientID={awareness.clientID} />
-      {uid === ownerId && <ShareControl boardId={boardId} />}
       <ZoomControls
         scale={viewport.scale}
         onZoomIn={zoomIn}
@@ -1098,7 +1099,10 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
           const screen = worldToScreen(viewport, { x: textEdit.x, y: textEdit.y });
           const fontSize = (textShape ? textShape.fontSize : itemStyle.fontSize) * viewport.scale;
           const family = FONT_FAMILY_CSS[(textShape ? textShape.fontFamily : itemStyle.fontFamily) ?? 'hand'];
-          const color = textShape ? textShape.color ?? '#1e1e1e' : drawStyle.strokeColor;
+          const color = adjustColorForTheme(
+            textShape ? textShape.color ?? '#1e1e1e' : drawStyle.strokeColor,
+            theme === 'dark',
+          );
           const align = (textShape ? textShape.textAlign : itemStyle.textAlign) ?? 'left';
           return (
             <TextEditor
@@ -1183,6 +1187,7 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
               onDragStart={() => handleShapeDragStart(shape.id)}
               onDragEnd={(e) => handleShapeDragEnd(shape, e)}
               hideText={shape.id === editingStickyId || shape.id === textEdit?.id}
+              dark={theme === 'dark'}
               registerNode={TRANSFORMABLE_TYPES.has(shape.type) ? registerNode(shape.id) : undefined}
               onHoverChange={(hovering) => handleHoverChange(shape.id, hovering)}
             />

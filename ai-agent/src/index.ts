@@ -103,8 +103,14 @@ async function watchBoard(boardId: string): Promise<() => Promise<void>> {
   }
 
   const awareness = new Awareness(doc);
+  // A stable presence key (rather than the default per-connection random
+  // one) means the agent is always the SAME logical presence entry across
+  // restarts/redeploys — so a dev-mode reload or a redeploy replaces the
+  // previous entry instead of piling up a new "AI" ghost every time (which is
+  // otherwise how a crashed/killed process's stale connection would show up
+  // indefinitely in every viewer's peer list).
   const channel = supabase.channel(`board:${boardId}`, {
-    config: { broadcast: { self: false } },
+    config: { broadcast: { self: false }, presence: { key: AGENT_BROADCAST_ID } },
   });
 
   const awarenessSender = createGuardedSender(channel, AWARENESS_EVENT, AGENT_BROADCAST_ID);

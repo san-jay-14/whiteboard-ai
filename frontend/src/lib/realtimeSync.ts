@@ -32,16 +32,23 @@ export type BoardSyncHandle = {
   getConnectionStatus: () => ConnectionStatus;
 };
 
+// Supabase groups presence "metas" by key: normally one key per connection
+// (a browser tab, or the agent process), but a single key can carry MULTIPLE
+// metas if more than one live socket ever tracked under it — e.g. a killed
+// process whose old connection wasn't cleanly closed before a new one joined
+// under the same key. Collapse to one entry per key (the most recently
+// joined meta) so a restart/reconnect never renders as a duplicate peer.
 function derivePresenceList(state: RealtimePresenceState<PresencePayload>): PresencePeer[] {
-  return Object.values(state).flatMap((entries) =>
-    entries.map((entry) => ({
+  return Object.values(state)
+    .filter((entries) => entries.length > 0)
+    .map((entries) => entries[entries.length - 1])
+    .map((entry) => ({
       name: entry.name,
       color: entry.color,
       awarenessClientID: entry.awarenessClientID,
       kind: entry.kind,
       status: entry.status,
-    })),
-  );
+    }));
 }
 
 // Wires doc updates, awareness updates, and Presence onto one Realtime

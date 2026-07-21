@@ -34,7 +34,7 @@ export default function AgentThinkingIndicator({ status }: { status: Status | nu
     <div className="pointer-events-none absolute bottom-6 left-1/2 z-30 -translate-x-1/2">
       <div className="flex items-center gap-1.5 rounded-full bg-white/95 py-1.5 pl-1.5 pr-4 shadow-lg ring-1 ring-black/5 backdrop-blur dark:bg-neutral-800/95 dark:ring-white/10">
         <DotLottieReact
-          src="/agent-thinking.lottie"
+          src="/loading.lottie"
           autoplay
           loop
           style={{ width: 34, height: 34 }}

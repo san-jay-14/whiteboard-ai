@@ -35,6 +35,7 @@ import { useTheme } from '../lib/theme';
 import { adjustColorForTheme } from '../lib/themeColor';
 import { deleteShapesCascading } from '../lib/deleteShapes';
 import { acceptShape, rejectShape } from '../lib/reviewActions';
+import { useAiEnabled, useAiLog } from '../lib/aiLog';
 import {
   getArrowEndpoints,
   getRotatedAABB,
@@ -68,6 +69,8 @@ import TextEditor from './TextEditor';
 import ZoomControls from './ZoomControls';
 import Menu from './Menu';
 import LibraryPanel from './LibraryPanel';
+import AiActivityPanel from './AiActivityPanel';
+import AgentThinkingIndicator from './AgentThinkingIndicator';
 import { copyPngToClipboard, downloadPng, downloadSvg } from '../lib/exportImage';
 import { addToLibrary, instantiateLibraryItem, type LibraryItem } from '../lib/library';
 import { showErrorToast } from '../lib/toast';
@@ -114,10 +117,20 @@ function distToSegment(p: Point, a: Point, b: Point): number {
 }
 
 export default function Canvas({ ownerId, uid, onBack }: Props) {
-  const { boardId, doc, shapesMap, awareness, boardSync } = useBoardSession();
+  const { boardId, doc, shapesMap, metaMap, aiLog, awareness, boardSync } = useBoardSession();
   const shapes = useShapes();
+  const aiEnabled = useAiEnabled(metaMap);
+  const aiEntries = useAiLog(aiLog);
+  const toggleAi = useCallback(() => {
+    metaMap.set('aiEnabled', !aiEnabled);
+  }, [metaMap, aiEnabled]);
   const remotePeers = useAwareness();
   const presencePeers = usePresence();
+  // Transient "the AI is working" status, broadcast by the agent via presence.
+  const agentStatus = useMemo(
+    () => presencePeers.find((p) => p.kind === 'agent' && p.status)?.status ?? null,
+    [presencePeers],
+  );
   const connectionStatus = useConnectionStatus();
   const stageRef = useRef<Konva.Stage>(null);
   const dragStart = useRef<Point | null>(null);
@@ -242,6 +255,18 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
 
   function handleReject(shape: Shape) {
     rejectShape(shapesMap, shape);
+    setSelectedIds(new Set());
+  }
+
+  // Accept/reject every pending shape at once — a from-scratch AI diagram can
+  // be dozens of proposals, so reviewing them one by one is impractical. Runs
+  // in a single transaction so it's one undo step and one broadcast.
+  function handleReviewAll(accept: boolean) {
+    const pending = shapes.filter((s) => s.pendingReview);
+    if (pending.length === 0) return;
+    doc.transact(() => {
+      pending.forEach((s) => (accept ? acceptShape(shapesMap, s) : rejectShape(shapesMap, s)));
+    });
     setSelectedIds(new Set());
   }
 
@@ -1022,7 +1047,15 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
         boardId={boardId}
         canInvite={uid === ownerId}
       />
-      <Toolbar tool={tool} onChange={setTool} onAskAi={boardSync.requestAiReview} />
+      <Toolbar
+        tool={tool}
+        onChange={setTool}
+        onAskAi={boardSync.requestAiReview}
+        aiEnabled={aiEnabled}
+        onToggleAi={toggleAi}
+      />
+      <AiActivityPanel entries={aiEntries} enabled={aiEnabled} />
+      <AgentThinkingIndicator status={agentStatus} />
       {showPanel && (
         <PropertiesPanel
           style={panelStyle}
@@ -1067,17 +1100,32 @@ export default function Canvas({ ownerId, uid, onBack }: Props) {
       {shapes.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <p className="max-w-xs text-center text-sm text-neutral-400">
-            Nothing here yet — pick a tool above to start drawing, or click "Ask AI to look" once you've added a
-            few shapes.
+            Nothing here yet — pick a tool above to start drawing. Once you've added a few shapes, use "Ask AI"
+            to review the board or tell it what to do (e.g. "redraw it neatly").
           </p>
         </div>
       )}
       {pendingCount > 0 && (
-        <div className="absolute bottom-4 right-4 z-10 flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-neutral-700 shadow-md">
+        <div className="absolute bottom-4 right-4 z-10 flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-neutral-700 shadow-md dark:bg-neutral-800 dark:text-neutral-200">
           <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-600 text-xs font-semibold text-white">
             {pendingCount}
           </span>
-          AI suggestion{pendingCount === 1 ? '' : 's'} to review
+          AI suggestion{pendingCount === 1 ? '' : 's'}
+          <span className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-600" />
+          <button
+            type="button"
+            onClick={() => handleReviewAll(true)}
+            className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
+          >
+            Accept all
+          </button>
+          <button
+            type="button"
+            onClick={() => handleReviewAll(false)}
+            className="rounded-md px-2 py-1 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/15"
+          >
+            Reject all
+          </button>
         </div>
       )}
       {hoveredShape?.pendingReview && (

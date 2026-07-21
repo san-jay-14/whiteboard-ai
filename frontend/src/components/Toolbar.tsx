@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { toggleTheme, useTheme } from '../lib/theme';
 
 export type Tool =
@@ -109,13 +109,150 @@ const TOOLS: { id: Tool; label: string; badge?: string }[] = [
   { id: 'eraser', label: 'Eraser (E or 0)', badge: '0' },
 ];
 
+// Quick-fill suggestions for the Ask AI prompt, so users don't have to think
+// up phrasing. Picking one drops the text into the box (still editable).
+const AI_PRESETS = [
+  'Optimize this diagram',
+  'Redraw it neatly',
+  'Add any missing connections',
+  'Group related shapes',
+];
+
+// The "Ask AI" control: an on/off toggle plus a button that opens a small
+// popover for an optional free-text instruction ("optimize this diagram",
+// "redraw it neatly", …). Sending with an empty box runs a plain review.
+function AiControls({
+  enabled,
+  onAsk,
+  onToggle,
+}: {
+  enabled: boolean;
+  onAsk: (prompt?: string) => void;
+  onToggle: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [prompt, setPrompt] = useState('');
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click or Escape while the popover is open.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  function send(text?: string) {
+    onAsk(text);
+    setPrompt('');
+    setOpen(false);
+  }
+
+  return (
+    <div ref={rootRef} className="relative flex items-center gap-1">
+      <button
+        type="button"
+        title={enabled ? 'AI assistant is on — click to turn off' : 'AI assistant is off — click to turn on'}
+        aria-label="Toggle AI assistant"
+        aria-pressed={enabled}
+        onClick={onToggle}
+        className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
+          enabled
+            ? 'text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-500/15'
+            : 'text-neutral-400 hover:bg-neutral-100 dark:text-neutral-500 dark:hover:bg-neutral-700'
+        }`}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 3v8" />
+          <path d="M6.6 6.6a8 8 0 1 0 10.8 0" />
+          {!enabled && <path d="M4 4l16 16" />}
+        </svg>
+      </button>
+      <button
+        type="button"
+        title={enabled ? 'Ask AI to review or act on the board' : 'Turn the AI assistant on to use this'}
+        disabled={!enabled}
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-violet-700 transition-colors hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-violet-300 dark:hover:bg-violet-500/15"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" />
+        </svg>
+        Ask AI
+      </button>
+
+      {open && enabled && (
+        <div className="absolute left-1/2 top-full z-30 mt-2 w-72 -translate-x-1/2 rounded-xl bg-white p-3 shadow-xl ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10">
+          <p className="mb-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+            Tell the AI what to do (optional)
+          </p>
+          <textarea
+            autoFocus
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter sends; Shift+Enter inserts a newline.
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                send(prompt || undefined);
+              }
+            }}
+            rows={2}
+            placeholder="e.g. Optimize this diagram"
+            className="w-full resize-none rounded-lg border border-neutral-200 bg-white px-2.5 py-2 text-sm text-neutral-800 outline-none focus:border-violet-400 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-100"
+          />
+          <div className="mt-2 flex flex-wrap gap-1">
+            {AI_PRESETS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPrompt(p)}
+                className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600 transition-colors hover:bg-violet-100 hover:text-violet-700 dark:bg-neutral-700 dark:text-neutral-300 dark:hover:bg-violet-500/25 dark:hover:text-violet-200"
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2.5 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => send(undefined)}
+              className="text-xs font-medium text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-100"
+            >
+              Just review
+            </button>
+            <button
+              type="button"
+              onClick={() => send(prompt || undefined)}
+              className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-violet-700"
+            >
+              {prompt.trim() ? 'Send' : 'Review board'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 type Props = {
   tool: Tool;
   onChange: (tool: Tool) => void;
-  onAskAi: () => void;
+  onAskAi: (prompt?: string) => void;
+  aiEnabled: boolean;
+  onToggleAi: () => void;
 };
 
-export default function Toolbar({ tool, onChange, onAskAi }: Props) {
+export default function Toolbar({ tool, onChange, onAskAi, aiEnabled, onToggleAi }: Props) {
   const theme = useTheme();
   return (
     <div className="absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-1 rounded-xl bg-white p-1.5 shadow-lg ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10">
@@ -145,17 +282,7 @@ export default function Toolbar({ tool, onChange, onAskAi }: Props) {
         );
       })}
       <span className="mx-1 h-6 w-px bg-neutral-200 dark:bg-neutral-600" />
-      <button
-        type="button"
-        title="Ask AI to review the board"
-        onClick={onAskAi}
-        className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-violet-700 transition-colors hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-500/15"
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" />
-        </svg>
-        Ask AI
-      </button>
+      <AiControls enabled={aiEnabled} onAsk={onAskAi} onToggle={onToggleAi} />
       <span className="mx-1 h-6 w-px bg-neutral-200 dark:bg-neutral-600" />
       <button
         type="button"

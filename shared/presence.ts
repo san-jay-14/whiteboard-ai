@@ -9,6 +9,10 @@ export type PresencePayload = {
   color: string;
   awarenessClientID: number;
   kind?: 'agent' | 'human';
+  // The AI agent republishes its presence with a transient status while a
+  // reasoning pass is in flight, so clients can show a "thinking/drawing"
+  // indicator. Absent/undefined means idle.
+  status?: 'thinking' | 'drawing';
 };
 
 // The awareness state each peer publishes (cursor + identity). The agent

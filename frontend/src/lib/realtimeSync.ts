@@ -27,7 +27,7 @@ export type BoardSyncHandle = {
   disconnect: () => void;
   subscribePresence: (callback: () => void) => () => void;
   getPresenceSnapshot: () => PresencePeer[];
-  requestAiReview: () => void;
+  requestAiReview: (prompt?: string) => void;
   subscribeConnectionStatus: (callback: () => void) => () => void;
   getConnectionStatus: () => ConnectionStatus;
 };
@@ -39,6 +39,7 @@ function derivePresenceList(state: RealtimePresenceState<PresencePayload>): Pres
       color: entry.color,
       awarenessClientID: entry.awarenessClientID,
       kind: entry.kind,
+      status: entry.status,
     })),
   );
 }
@@ -181,8 +182,10 @@ export function connectBoardSync(
     getPresenceSnapshot() {
       return presenceSnapshot;
     },
-    requestAiReview() {
-      channel.send({ type: 'broadcast', event: MANUAL_REVIEW_EVENT, payload: {} }).catch(() => {});
+    requestAiReview(prompt?: string) {
+      const trimmed = prompt?.trim();
+      const payload = trimmed ? { prompt: trimmed } : {};
+      channel.send({ type: 'broadcast', event: MANUAL_REVIEW_EVENT, payload }).catch(() => {});
     },
     subscribeConnectionStatus(callback) {
       connectionListeners.add(callback);

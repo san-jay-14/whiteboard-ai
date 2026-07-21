@@ -21,6 +21,9 @@ export type ShapeBase = {
   rotation?: number;
   groupId?: string;
   reviewReason?: string;
+  // For AI move/update proposals: pre-proposal values of the changed fields,
+  // so the frontend can revert on reject (mirror of frontend/src/lib/types.ts).
+  reviewPrevious?: Record<string, unknown>;
   strokeStyle?: StrokeStyle;
   strokeWidth?: number;
   edges?: Edges;

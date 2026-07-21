@@ -14,7 +14,7 @@ import {
 import { AGENT_BROADCAST_ID, AGENT_COLOR, AGENT_NAME, type AwarenessState } from './shared/presence';
 import { byteaHexToBytes } from './shared/bytea';
 import type { Shape, ShapeGraph } from './shapes/types';
-import { runReasoningPass } from './reasoning';
+import { runReasoningPass, type AiLogEntry, type ToolCall } from './reasoning';
 import { executeToolCalls } from './executor';
 
 // Debounce trigger (brief section 5): fire a reasoning pass ~5s after the
@@ -30,6 +30,13 @@ const POLL_MS = 15000;
 // activity on many boards can't fan out into unbounded parallel API calls.
 const MAX_CONCURRENT_PASSES = 3;
 let activePasses = 0;
+
+// How many recent interaction-log entries to feed back into a pass as context
+// (the whiteboard has no chat UI, so this shared log is the AI's memory).
+const MAX_HISTORY = 12;
+
+// Cap the shared interaction log so it can't grow without bound in the doc.
+const MAX_LOG_ENTRIES = 100;
 
 // The agent has no mouse; it parks a fixed cursor so it renders in the
 // awareness layer as a visible, distinct "watching" presence (step 9).
@@ -48,6 +55,36 @@ async function watchBoard(boardId: string): Promise<() => Promise<void>> {
   const label = boardId.slice(0, 8);
   const doc = new Y.Doc();
   const shapesMap: Y.Map<Shape> = doc.getMap('shapes');
+  // Shared board metadata (currently just the AI on/off switch) and the
+  // interaction log — both live in the same Y.Doc so they sync over the
+  // normal channel and persist in the snapshot alongside the shapes.
+  const metaMap: Y.Map<unknown> = doc.getMap('meta');
+  const aiLog: Y.Array<AiLogEntry> = doc.getArray('aiLog');
+
+  // Default ON: only an explicit `false` disables the assistant.
+  const isAiEnabled = () => metaMap.get('aiEnabled') !== false;
+
+  function appendLog(entry: AiLogEntry) {
+    aiLog.push([entry]);
+    // Trim from the front if it has grown past the cap.
+    const overflow = aiLog.length - MAX_LOG_ENTRIES;
+    if (overflow > 0) aiLog.delete(0, overflow);
+  }
+
+  function summarize(calls: ToolCall[]): string {
+    const counts = new Map<string, number>();
+    for (const c of calls) counts.set(c.name, (counts.get(c.name) ?? 0) + 1);
+    const noun = (name: string) =>
+      ({
+        create_shape: 'shape',
+        propose_connector: 'connector',
+        propose_group: 'group',
+        propose_annotation: 'annotation',
+        move_shape: 'move',
+        update_shape: 'edit',
+      })[name] ?? name;
+    return [...counts.entries()].map(([name, n]) => `${n} ${noun(name)}${n === 1 ? '' : 's'}`).join(', ');
+  }
 
   // Load-on-join, same as a normal client (brief step 7): apply the latest
   // snapshot before wiring listeners.
@@ -96,7 +133,28 @@ async function watchBoard(boardId: string): Promise<() => Promise<void>> {
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let isReasoning = false;
 
-  async function runPass(trigger: 'debounce' | 'manual') {
+  // Republish presence with a transient status so watching clients can show a
+  // "thinking/drawing" indicator. Called with no arg to return to idle.
+  function trackStatus(status?: 'thinking' | 'drawing') {
+    channel
+      .track({
+        name: AGENT_NAME,
+        color: AGENT_COLOR,
+        awarenessClientID: awareness.clientID,
+        kind: 'agent',
+        ...(status ? { status } : {}),
+      })
+      .catch(() => {});
+  }
+
+  async function runPass(trigger: 'debounce' | 'manual', instruction?: string) {
+    // The on/off switch stops BOTH automatic and manual passes completely
+    // (checked here rather than at the trigger, so a stale event can't slip
+    // through while disabled).
+    if (!isAiEnabled()) {
+      console.log(`[${label}] AI disabled — skipping ${trigger} pass`);
+      return;
+    }
     if (isReasoning) {
       console.log(`[${label}] ignoring ${trigger} — a pass is already in flight`);
       return;
@@ -111,19 +169,44 @@ async function watchBoard(boardId: string): Promise<() => Promise<void>> {
     activePasses++;
     try {
       const shapeGraph = shapesMap.toJSON() as ShapeGraph;
-      console.log(`[${label}] reasoning (${trigger}), ${Object.keys(shapeGraph).length} shape(s)`);
-      const calls = await runReasoningPass(shapeGraph);
+      // Snapshot the log BEFORE appending this turn's entries, so history is
+      // strictly prior context. (Use toArray()+slice rather than
+      // Y.Array.slice — a negative index there yields undefined-filled holes.)
+      const allLog = aiLog.toArray();
+      const history = allLog.slice(Math.max(0, allLog.length - MAX_HISTORY));
+      const trimmed = instruction?.trim();
+      console.log(
+        `[${label}] reasoning (${trigger}), ${Object.keys(shapeGraph).length} shape(s)` +
+          (trimmed ? ` — instruction: "${trimmed}"` : ''),
+      );
+      if (trimmed) appendLog({ role: 'user', text: trimmed, ts: Date.now() });
+
+      trackStatus('thinking');
+      const { calls, text } = await runReasoningPass(shapeGraph, { instruction: trimmed, history });
+
       if (calls.length === 0) {
         console.log(`[${label}] no suggestions this pass`);
+        // Only surface an "AI response" for directed passes; a silent
+        // background pass with nothing to say shouldn't spam the log.
+        if (trimmed) {
+          appendLog({ role: 'assistant', text: text || 'No changes suggested for that request.', ts: Date.now() });
+        }
       } else {
         console.log(`[${label}] applying ${calls.length} proposal(s): ${calls.map((c) => c.name).join(', ')}`);
+        trackStatus('drawing');
         executeToolCalls(doc, shapesMap, calls);
+        appendLog({
+          role: 'assistant',
+          text: text || `Proposed ${summarize(calls)} for review.`,
+          ts: Date.now(),
+        });
       }
     } catch (e) {
       console.error(`[${label}] reasoning pass failed`, e);
     } finally {
       isReasoning = false;
       activePasses--;
+      trackStatus(); // back to idle
     }
   }
 
@@ -135,8 +218,8 @@ async function watchBoard(boardId: string): Promise<() => Promise<void>> {
     }, DEBOUNCE_MS);
   }
 
-  channel.on('broadcast', { event: MANUAL_REVIEW_EVENT }, () => {
-    void runPass('manual');
+  channel.on('broadcast', { event: MANUAL_REVIEW_EVENT }, ({ payload }: { payload?: { prompt?: string } }) => {
+    void runPass('manual', payload?.prompt);
   });
 
   // Broadcast the agent's own doc writes; reset the idle timer on genuine

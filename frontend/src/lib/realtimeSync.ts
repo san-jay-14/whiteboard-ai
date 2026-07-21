@@ -27,20 +27,28 @@ export type BoardSyncHandle = {
   disconnect: () => void;
   subscribePresence: (callback: () => void) => () => void;
   getPresenceSnapshot: () => PresencePeer[];
-  requestAiReview: () => void;
+  requestAiReview: (prompt?: string) => void;
   subscribeConnectionStatus: (callback: () => void) => () => void;
   getConnectionStatus: () => ConnectionStatus;
 };
 
+// Supabase groups presence "metas" by key: normally one key per connection
+// (a browser tab, or the agent process), but a single key can carry MULTIPLE
+// metas if more than one live socket ever tracked under it — e.g. a killed
+// process whose old connection wasn't cleanly closed before a new one joined
+// under the same key. Collapse to one entry per key (the most recently
+// joined meta) so a restart/reconnect never renders as a duplicate peer.
 function derivePresenceList(state: RealtimePresenceState<PresencePayload>): PresencePeer[] {
-  return Object.values(state).flatMap((entries) =>
-    entries.map((entry) => ({
+  return Object.values(state)
+    .filter((entries) => entries.length > 0)
+    .map((entries) => entries[entries.length - 1])
+    .map((entry) => ({
       name: entry.name,
       color: entry.color,
       awarenessClientID: entry.awarenessClientID,
       kind: entry.kind,
-    })),
-  );
+      status: entry.status,
+    }));
 }
 
 // Wires doc updates, awareness updates, and Presence onto one Realtime
@@ -181,8 +189,10 @@ export function connectBoardSync(
     getPresenceSnapshot() {
       return presenceSnapshot;
     },
-    requestAiReview() {
-      channel.send({ type: 'broadcast', event: MANUAL_REVIEW_EVENT, payload: {} }).catch(() => {});
+    requestAiReview(prompt?: string) {
+      const trimmed = prompt?.trim();
+      const payload = trimmed ? { prompt: trimmed } : {};
+      channel.send({ type: 'broadcast', event: MANUAL_REVIEW_EVENT, payload }).catch(() => {});
     },
     subscribeConnectionStatus(callback) {
       connectionListeners.add(callback);

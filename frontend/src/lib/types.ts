@@ -36,6 +36,11 @@ export type ShapeBase = {
   rotation?: number;
   groupId?: string;
   reviewReason?: string;
+  // For AI move/update proposals: the pre-proposal values of exactly the
+  // fields the proposal changed, so rejecting a modification reverts the
+  // shape instead of deleting it. Absent on brand-new proposed shapes
+  // (propose_connector/annotation), whose reject deletes them outright.
+  reviewPrevious?: Record<string, unknown>;
   strokeStyle?: StrokeStyle;
   strokeWidth?: number;
   edges?: Edges;
